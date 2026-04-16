@@ -55,18 +55,18 @@ interface Project {
 interface Props { project: Project }
 
 const STATUS_BG: Record<string, string> = {
-  comply:               '#C6EFCE',
-  not_comply:           '#FFC7CE',
-  noted:                '#FFEB9C',
-  not_part_of_proposal: '#E8E8E8',
-  header:               '#D6E4F0',
+  comply:               'oklch(0.72 0.19 155 / 0.12)',
+  not_comply:           'oklch(0.68 0.22 25  / 0.12)',
+  noted:                'oklch(0.78 0.16 85  / 0.12)',
+  not_part_of_proposal: 'oklch(0.55 0.02 260 / 0.08)',
+  header:               'oklch(0.65 0.18 270 / 0.10)',
 }
 const STATUS_TEXT: Record<string, string> = {
-  comply:               '#276221',
-  not_comply:           '#9C0006',
-  noted:                '#7D5A00',
-  not_part_of_proposal: '#444444',
-  header:               '#1F3864',
+  comply:               'var(--status-comply)',
+  not_comply:           'var(--status-not-comply)',
+  noted:                'var(--status-noted)',
+  not_part_of_proposal: 'var(--text-muted)',
+  header:               'var(--brand-primary)',
 }
 const STATUS_LABEL: Record<string, string> = {
   comply:               'Comply',
@@ -320,7 +320,7 @@ export function ProjectDetailClient({ project }: Props) {
                         <th
                           key={h}
                           className="px-2.5 py-2 text-left font-semibold border"
-                          style={{ background: '#2E75B6', color: '#FFFFFF', borderColor: '#1F5C99', fontSize: '11px' }}
+                          style={{ background: 'var(--surface-3)', color: 'var(--text-secondary)', borderColor: 'var(--border-default)', fontSize: '11px' }}
                         >
                           {h}
                         </th>
@@ -342,15 +342,25 @@ export function ProjectDetailClient({ project }: Props) {
                             <td
                               colSpan={5}
                               className="px-3 py-2 border font-semibold"
-                              style={{ background: '#1F3864', color: '#FFFFFF', borderColor: '#142654', fontSize: '11px' }}
+                              style={{
+                                background: 'var(--surface-2)',
+                                color: 'var(--text-primary)',
+                                borderColor: 'var(--border-default)',
+                                borderLeft: '3px solid var(--brand-primary)',
+                                fontSize: '11px',
+                              }}
                             >
                               <div className="flex items-center justify-between">
                                 <span>{report.title}</span>
-                                <div className="flex items-center gap-3 font-normal text-xs" style={{ color: '#BDD7EE' }}>
+                                <div className="flex items-center gap-3 font-normal text-xs" style={{ color: 'var(--text-muted)' }}>
                                   <span>{total} clauses</span>
-                                  {rate !== null && <span>{rate}% comply</span>}
+                                  {rate !== null && (
+                                    <span style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
+                                      {rate}% comply
+                                    </span>
+                                  )}
                                   <Link href={`/projects/${project.id}/reports/${report.id}`} onClick={e => e.stopPropagation()}>
-                                    <span className="flex items-center gap-1 underline underline-offset-2 hover:text-white transition-colors cursor-pointer">
+                                    <span className="flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer" style={{ color: 'var(--brand-primary)' }}>
                                       Open <ExternalLink size={10} />
                                     </span>
                                   </Link>
@@ -361,28 +371,28 @@ export function ProjectDetailClient({ project }: Props) {
 
                           {rows.length === 0 ? (
                             <tr key={`empty-${report.id}`}>
-                              <td colSpan={5} className="px-3 py-2 border text-center" style={{ color: '#888', borderColor: '#D0D0D0', background: '#FAFAFA' }}>
+                              <td colSpan={5} className="px-3 py-2 border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
                                 No rows
                               </td>
                             </tr>
                           ) : rows.map(row => {
-                            const bg   = STATUS_BG[row.status]   ?? '#FFFFFF'
-                            const text = STATUS_TEXT[row.status] ?? '#000000'
+                            const bg   = STATUS_BG[row.status]   ?? 'var(--surface-1)'
+                            const text = STATUS_TEXT[row.status] ?? 'var(--text-primary)'
                             return (
                               <tr key={row.id} style={{ background: bg }}>
-                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: '#D0D0D0', color: text, fontWeight: row.status === 'header' ? 600 : 400 }}>
+                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: row.status === 'header' ? 600 : 400 }}>
                                   {row.clause}
                                 </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
                                   {row.requirement}
                                 </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
                                   {row.product_response}
                                 </td>
-                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: '#D0D0D0', color: text, fontWeight: 500 }}>
+                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: 500 }}>
                                   {STATUS_LABEL[row.status] ?? row.status}
                                 </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
                                   {row.remark}
                                 </td>
                               </tr>
