@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm view *)",
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"D:/OneDrive/Desktop/cms-compliance-hub/app/\\(dashboard\\)/projects/[projectId]/settings\")",
+      "Bash(mkdir -p \"D:/OneDrive/Desktop/cms-compliance-hub/app/\\(dashboard\\)/projects/[projectId]/upload\")",
+      "Bash(mkdir -p \"D:/OneDrive/Desktop/cms-compliance-hub/app/\\(dashboard\\)/projects/[projectId]/reports/[reportId]\")",
+      "Bash(mkdir -p \"D:/OneDrive/Desktop/cms-compliance-hub/app/api/projects/[id]\")",
+      "Bash(mkdir -p \"D:/OneDrive/Desktop/cms-compliance-hub/app/api/compliance/[reportId]/rows/[rowId]\")",
+      "Bash(npx tsc *)",
+      "Bash(npm run *)",
+      "Bash(npx prisma *)",
+      "Bash(node -e \"const {defineConfig} = require\\('prisma/config'\\); console.log\\(Object.keys\\(defineConfig.toString ? {} : {}\\)\\)\")",
+      "Bash(taskkill /F /IM node.exe)",
+      "Bash(cmd /c \"taskkill /F /IM node.exe\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(cmd *)"
+    ]
+  }
+}

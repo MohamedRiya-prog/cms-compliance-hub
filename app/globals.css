@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Brand — Linear-style purple-blue accent on deep dark */
+    --brand-primary: oklch(0.65 0.18 270);
+    --brand-secondary: oklch(0.72 0.15 250);
+    --brand-glow: oklch(0.65 0.18 270 / 0.15);
+
+    /* Compliance Status Colors */
+    --status-comply: oklch(0.72 0.19 155);
+    --status-not-comply: oklch(0.68 0.22 25);
+    --status-noted: oklch(0.78 0.16 85);
+    --status-not-part: oklch(0.55 0.02 260);
+
+    /* Surfaces — Full Dark Theme */
+    --surface-0: oklch(0.13 0.005 260);
+    --surface-1: oklch(0.17 0.008 260);
+    --surface-2: oklch(0.21 0.01 260);
+    --surface-3: oklch(0.25 0.012 260);
+    --surface-glass: oklch(0.17 0.008 260 / 0.8);
+
+    /* Text */
+    --text-primary: oklch(0.93 0.005 260);
+    --text-secondary: oklch(0.65 0.01 260);
+    --text-muted: oklch(0.45 0.01 260);
+
+    /* Borders */
+    --border-subtle: oklch(0.22 0.005 260);
+    --border-default: oklch(0.28 0.008 260);
+    --border-active: oklch(0.35 0.01 260);
+
+    /* Shadows & Glows */
+    --shadow-sm: 0 1px 3px oklch(0 0 0 / 0.3);
+    --shadow-md: 0 4px 16px oklch(0 0 0 / 0.4);
+    --shadow-lg: 0 12px 48px oklch(0 0 0 / 0.5);
+    --shadow-glow: 0 0 30px var(--brand-glow);
+
+    /* Typography */
+    --font-sans: 'Geist', 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: 'Geist Mono', 'JetBrains Mono', 'Fira Code', monospace;
+
+    /* shadcn/ui compat */
+    --background: oklch(0.13 0.005 260);
+    --foreground: oklch(0.93 0.005 260);
+    --card: oklch(0.17 0.008 260);
+    --card-foreground: oklch(0.93 0.005 260);
+    --popover: oklch(0.17 0.008 260);
+    --popover-foreground: oklch(0.93 0.005 260);
+    --primary: oklch(0.65 0.18 270);
+    --primary-foreground: oklch(0.98 0.002 260);
+    --secondary: oklch(0.21 0.01 260);
+    --secondary-foreground: oklch(0.93 0.005 260);
+    --muted: oklch(0.21 0.01 260);
+    --muted-foreground: oklch(0.55 0.01 260);
+    --accent: oklch(0.25 0.012 260);
+    --accent-foreground: oklch(0.93 0.005 260);
+    --destructive: oklch(0.68 0.22 25);
+    --destructive-foreground: oklch(0.98 0.002 260);
+    --border: oklch(0.28 0.008 260);
+    --input: oklch(0.22 0.005 260);
+    --ring: oklch(0.65 0.18 270);
+    --radius: 0.5rem;
+    --chart-1: oklch(0.72 0.19 155);
+    --chart-2: oklch(0.68 0.22 25);
+    --chart-3: oklch(0.78 0.16 85);
+    --chart-4: oklch(0.55 0.02 260);
+    --chart-5: oklch(0.65 0.18 270);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--border-default);
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    letter-spacing: -0.02em;
+    font-weight: 600;
+  }
+
+  ::selection {
+    background-color: oklch(0.65 0.18 270 / 0.3);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--surface-0);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-default);
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--border-active);
+  }
+}
+
+/* Status color utilities */
+@layer utilities {
+  .status-comply {
+    color: var(--status-comply);
+  }
+  .status-not-comply {
+    color: var(--status-not-comply);
+  }
+  .status-noted {
+    color: var(--status-noted);
+  }
+  .status-not-part {
+    color: var(--status-not-part);
+  }
+  .bg-status-comply {
+    background-color: oklch(0.72 0.19 155 / 0.12);
+    border-color: oklch(0.72 0.19 155 / 0.3);
+  }
+  .bg-status-not-comply {
+    background-color: oklch(0.68 0.22 25 / 0.12);
+    border-color: oklch(0.68 0.22 25 / 0.3);
+  }
+  .bg-status-noted {
+    background-color: oklch(0.78 0.16 85 / 0.12);
+    border-color: oklch(0.78 0.16 85 / 0.3);
+  }
+  .bg-status-not-part {
+    background-color: oklch(0.55 0.02 260 / 0.12);
+    border-color: oklch(0.55 0.02 260 / 0.3);
+  }
+  .bg-status-header {
+    background-color: oklch(0.65 0.18 270 / 0.1);
+    border-color: oklch(0.65 0.18 270 / 0.3);
+  }
+
+  .glow-brand {
+    box-shadow: 0 0 30px var(--brand-glow);
+  }
+  .glow-comply {
+    box-shadow: 0 0 12px oklch(0.72 0.19 155 / 0.2);
+  }
+  .glow-not-comply {
+    box-shadow: 0 0 12px oklch(0.68 0.22 25 / 0.2);
+  }
+
+  .glass {
+    background-color: var(--surface-glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .surface-0 { background-color: var(--surface-0); }
+  .surface-1 { background-color: var(--surface-1); }
+  .surface-2 { background-color: var(--surface-2); }
+  .surface-3 { background-color: var(--surface-3); }
+
+  /* ── Markdown product preview ─────────────────────────────────────────────── */
+  .prose-products {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.75;
+    max-width: none;
+  }
+
+  .prose-products h1 {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-top: 0;
+    margin-bottom: 1.25rem;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border-default);
+  }
+  .prose-products h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    color: oklch(0.65 0.18 270);
+    letter-spacing: -0.01em;
+  }
+  .prose-products h2:first-child { margin-top: 0; }
+  .prose-products h3 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-top: 1.25rem;
+    margin-bottom: 0.4rem;
+    color: var(--text-primary);
+  }
+  .prose-products p { margin-bottom: 0.5rem; }
+  .prose-products strong {
+    color: var(--text-primary);
+    font-weight: 600;
+  }
+  .prose-products ul,
+  .prose-products ol {
+    padding-left: 1.25rem;
+    margin-bottom: 0.6rem;
+  }
+  .prose-products li { margin-bottom: 0.15rem; }
+  .prose-products ul > li::marker { color: oklch(0.65 0.18 270 / 0.5); }
+  .prose-products hr {
+    border: none;
+    border-top: 1px solid var(--border-subtle);
+    margin: 1.5rem 0;
+  }
+
+  /* Table scroll wrapper — react-markdown renders bare <table>, so we style it directly */
+  .prose-products table {
+    border-collapse: collapse;
+    font-size: 0.775rem;
+    width: max-content;
+    min-width: 100%;
+  }
+  /* Wrap tables in a scrollable container via a sibling div trick in the page */
+  .table-outer {
+    display: block;
+    overflow-x: auto;
+    width: 100%;
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    margin-bottom: 1.25rem;
+  }
+  .prose-products thead tr {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-default);
+  }
+  .prose-products th {
+    color: var(--text-primary);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.5rem 0.85rem;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    border-right: 1px solid var(--border-subtle);
+  }
+  .prose-products th:last-child { border-right: none; }
+  .prose-products td {
+    padding: 0.4rem 0.85rem;
+    border-top: 1px solid var(--border-subtle);
+    border-right: 1px solid var(--border-subtle);
+    vertical-align: top;
+    white-space: nowrap;
+  }
+  .prose-products td:last-child { border-right: none; }
+  .prose-products tbody tr:hover { background: var(--surface-1); }
+
+  .prose-products code {
+    font-family: monospace;
+    font-size: 0.8rem;
+    background: var(--surface-2);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    color: var(--text-secondary);
+  }
+}

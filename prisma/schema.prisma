@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Profile {
+  id        String   @id @db.Uuid
+  fullName  String   @map("full_name")
+  role      String   @default("engineer")
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  projects         Project[]
+  productDataEdits ProductData[]
+  rulesEdits       ComplianceRule[]
+  examplesEdits    ComplianceExample[]
+
+  @@map("profiles")
+}
+
+model Project {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  name          String
+  client        String?
+  location      String?
+  projectNumber String?  @map("project_number")
+  contractor    String?
+  mainContractor String? @map("main_contractor")
+  consultant    String?
+  description   String?
+  status        String   @default("active")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  profile           Profile            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specDocuments     SpecDocument[]
+  complianceReports ComplianceReport[]
+
+  @@index([userId], name: "idx_projects_user")
+  @@map("projects")
+}
+
+model SpecDocument {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId        String   @map("project_id") @db.Uuid
+  fileName         String   @map("file_name")
+  fileType         String   @map("file_type")
+  fileSize         Int?     @map("file_size")
+  storagePath      String   @map("storage_path")
+  extractedText    String?  @map("extracted_text")
+  extractedSections Json?   @map("extracted_sections")
+  contentHash      String?  @map("content_hash")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at") @db.Timestamptz()
+
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  complianceReports ComplianceReport[]
+
+  @@index([projectId], name: "idx_specs_project")
+  @@map("spec_documents")
+}
+
+model ComplianceReport {
+  id                 String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId          String   @map("project_id") @db.Uuid
+  specDocumentId     String?  @map("spec_document_id") @db.Uuid
+  title              String
+  productFamily      String   @map("product_family")
+  productModel       String?  @map("product_model")
+  status             String   @default("generating")
+  summary            Json?
+  promptVersion      String?  @map("prompt_version")
+  generationMetadata Json?    @map("generation_metadata")
+  specText           String?  @map("spec_text")
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  specDocument SpecDocument? @relation(fields: [specDocumentId], references: [id])
+  rows         ComplianceRow[]
+  chatMessages ChatMessage[]
+
+  @@index([projectId], name: "idx_reports_project")
+  @@map("compliance_reports")
+}
+
+model ComplianceRow {
+  id               String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId         String   @map("report_id") @db.Uuid
+  sortOrder        Int      @map("sort_order")
+  clause           String
+  requirement      String
+  productResponse  String?  @map("product_response")
+  status           String
+  remark           String?
+  confidence       String   @default("high")
+  isEdited         Boolean  @default(false) @map("is_edited")
+  originalResponse Json?    @map("original_response")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  report       ComplianceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  chatMessages ChatMessage[]
+
+  @@index([reportId], name: "idx_rows_report")
+  @@map("compliance_rows")
+}
+
+model ChatMessage {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  reportId        String   @map("report_id") @db.Uuid
+  role            String
+  content         String
+  referencedRowId String?  @map("referenced_row_id") @db.Uuid
+  rowUpdates      Json?    @map("row_updates")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  report          ComplianceReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  referencedRow   ComplianceRow?   @relation(fields: [referencedRowId], references: [id])
+
+  @@index([reportId], name: "idx_chat_report")
+  @@map("chat_messages")
+}
+
+model ProductData {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  family    String
+  content   String
+  version   Int      @default(1)
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  editor Profile? @relation(fields: [updatedBy], references: [id])
+
+  @@map("product_data")
+}
+
+model ComplianceRule {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content   String
+  version   Int      @default(1)
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  editor Profile? @relation(fields: [updatedBy], references: [id])
+
+  @@map("compliance_rules")
+}
+
+model ComplianceExample {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  content   String
+  version   Int      @default(1)
+  updatedBy String?  @map("updated_by") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz()
+
+  editor Profile? @relation(fields: [updatedBy], references: [id])
+
+  @@map("compliance_examples")
+}

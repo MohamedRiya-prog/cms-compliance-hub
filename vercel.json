@@ -1,0 +1,16 @@
+{
+  "functions": {
+    "app/api/compliance/generate/route.ts": {
+      "maxDuration": 120
+    },
+    "app/api/compliance/[reportId]/chat/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/documents/parse/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/documents/upload/route.ts": {
+      "maxDuration": 30
+    }
+  }
+}
