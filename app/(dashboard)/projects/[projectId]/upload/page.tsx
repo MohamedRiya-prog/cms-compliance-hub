@@ -3,7 +3,7 @@
 import { useState, useCallback, use } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Upload, FileText, AlertCircle, ChevronRight, Loader } from 'lucide-react'
+import { ArrowLeft, Upload, FileText, AlertCircle, ChevronRight, Loader, CheckSquare, Square } from 'lucide-react'
 import Link from 'next/link'
 import { formatFileSize } from '@/lib/utils'
 
@@ -36,21 +36,30 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
   const [mode, setMode] = useState<'file' | 'text'>('file')
   const [dragging, setDragging] = useState(false)
   const [parsing, setParsing] = useState(false)
-  const [generating, setGenerating] = useState(false)
   const [sections, setSections] = useState<DetectedSection[]>([])
+  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [parsed, setParsed] = useState(false)
   const [error, setError] = useState('')
   const [uploadedDocId, setUploadedDocId] = useState<string | null>(null)
   const [extractedText, setExtractedText] = useState('')
   const [manualFamily, setManualFamily] = useState('')
 
+  // Generation progress
+  const [generating, setGenerating] = useState(false)
+  const [genStep, setGenStep] = useState<{ current: number; total: number; label: string } | null>(null)
+  const [genDone, setGenDone] = useState<Set<number>>(new Set())
+  const [genErrors, setGenErrors] = useState<Map<number, string>>(new Map())
+
   const handleFile = useCallback((f: File) => {
     setFile(f)
     setSections([])
+    setSelected(new Set())
     setError('')
     setParsed(false)
     setExtractedText('')
     setManualFamily('')
+    setGenDone(new Set())
+    setGenErrors(new Map())
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -60,10 +69,30 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
     if (f) handleFile(f)
   }, [handleFile])
 
+  function toggleSelect(i: number) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i)
+      else next.add(i)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    setSelected(prev =>
+      prev.size === sections.length
+        ? new Set()
+        : new Set(sections.map((_, i) => i))
+    )
+  }
+
   async function handleParse() {
     setParsing(true)
     setError('')
     setSections([])
+    setSelected(new Set())
+    setGenDone(new Set())
+    setGenErrors(new Map())
 
     try {
       const fd = new FormData()
@@ -77,11 +106,13 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
       const data = await res.json()
 
       if (!res.ok) throw new Error(data.error)
-      setSections(data.sections ?? [])
+      const detected: DetectedSection[] = data.sections ?? []
+      setSections(detected)
+      setSelected(new Set(detected.map((_, i) => i))) // pre-select all
       setExtractedText(data.text ?? pasteText)
       setParsed(true)
 
-      if ((data.sections ?? []).length === 0) {
+      if (detected.length === 0) {
         setError('No HVAC sections were auto-detected. Select a product family below to generate manually.')
       }
     } catch (err: unknown) {
@@ -91,51 +122,105 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
     }
   }
 
-  async function handleGenerate(section: DetectedSection) {
+  async function ensureDocUploaded(): Promise<string | null> {
+    if (uploadedDocId) return uploadedDocId
+    if (!file && !pasteText) return null
+
+    const fd = new FormData()
+    fd.append('projectId', projectId)
+    if (file) {
+      fd.append('file', file)
+    } else {
+      const blob = new Blob([pasteText], { type: 'text/plain' })
+      fd.append('file', blob, 'spec.txt')
+    }
+    const res = await fetch('/api/documents/upload', { method: 'POST', body: fd })
+    const d = await res.json()
+    if (!res.ok) throw new Error(d.error)
+    setUploadedDocId(d.document.id)
+    return d.document.id
+  }
+
+  async function handleGenerateSelected() {
+    const toGenerate = sections
+      .map((s, i) => ({ section: s, index: i }))
+      .filter(({ index }) => selected.has(index))
+
+    if (toGenerate.length === 0) return
     setGenerating(true)
     setError('')
+    setGenDone(new Set())
+    setGenErrors(new Map())
 
     try {
-      // Upload file first if not done
-      let docId = uploadedDocId
-      if (!docId && (file || pasteText)) {
-        const fd = new FormData()
-        fd.append('projectId', projectId)
-        if (file) {
-          fd.append('file', file)
-        } else {
-          const textBlob = new Blob([pasteText], { type: 'text/plain' })
-          fd.append('file', textBlob, 'spec.txt')
+      const docId = await ensureDocUploaded()
+
+      for (let g = 0; g < toGenerate.length; g++) {
+        const { section, index } = toGenerate[g]
+        setGenStep({ current: g + 1, total: toGenerate.length, label: section.label })
+
+        try {
+          const res = await fetch('/api/compliance/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              specText: section.text,
+              productFamily: section.family,
+              specDocumentId: docId,
+              projectId,
+              title: `${section.sectionNumber} — ${section.label}`,
+            }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error)
+          setGenDone(prev => new Set([...prev, index]))
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : 'Failed'
+          setGenErrors(prev => new Map([...prev, [index, msg]]))
         }
-        const uploadRes = await fetch('/api/documents/upload', { method: 'POST', body: fd })
-        const uploadData = await uploadRes.json()
-        if (!uploadRes.ok) throw new Error(uploadData.error)
-        docId = uploadData.document.id
-        setUploadedDocId(docId)
       }
 
-      // Generate compliance report
+      setGenStep(null)
+      router.push(`/projects/${projectId}`)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+      setGenStep(null)
+      setGenerating(false)
+    }
+  }
+
+  async function handleGenerateManual() {
+    if (!manualFamily) return
+    setGenerating(true)
+    setError('')
+    setGenStep({ current: 1, total: 1, label: PRODUCT_FAMILIES[manualFamily] ?? manualFamily })
+
+    try {
+      const docId = await ensureDocUploaded()
       const res = await fetch('/api/compliance/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          specText: section.text,
-          productFamily: section.family,
+          specText: extractedText.slice(0, 12000),
+          productFamily: manualFamily,
           specDocumentId: docId,
           projectId,
-          title: `${section.sectionNumber} — ${section.label}`,
+          title: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
         }),
       })
-
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
-
+      setGenStep(null)
       router.push(`/projects/${projectId}/reports/${data.id}`)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Generation failed')
+      setGenStep(null)
       setGenerating(false)
     }
   }
+
+  const allSelected = sections.length > 0 && selected.size === sections.length
+  const noneSelected = selected.size === 0
 
   return (
     <div className="p-6 max-w-3xl mx-auto">
@@ -226,19 +311,47 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
 
         <motion.button
           onClick={handleParse}
-          disabled={parsing || (mode === 'file' ? !file : !pasteText.trim())}
+          disabled={parsing || generating || (mode === 'file' ? !file : !pasteText.trim())}
           whileHover={{ scale: 1.01 }}
           whileTap={{ scale: 0.98 }}
           className="w-full py-2.5 rounded-xl text-sm font-semibold mb-6 flex items-center justify-center gap-2"
           style={{
             background: 'var(--brand-primary)',
             color: 'oklch(0.98 0.002 260)',
-            opacity: parsing || (mode === 'file' ? !file : !pasteText.trim()) ? 0.5 : 1,
-            cursor: parsing || (mode === 'file' ? !file : !pasteText.trim()) ? 'not-allowed' : 'pointer',
+            opacity: parsing || generating || (mode === 'file' ? !file : !pasteText.trim()) ? 0.5 : 1,
+            cursor: parsing || generating || (mode === 'file' ? !file : !pasteText.trim()) ? 'not-allowed' : 'pointer',
           }}
         >
           {parsing ? <><Loader size={14} className="animate-spin" /> Detecting sections…</> : 'Detect HVAC Sections'}
         </motion.button>
+
+        {/* Generation progress bar */}
+        <AnimatePresence>
+          {genStep && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mb-4 px-4 py-3 rounded-xl border"
+              style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  Generating {genStep.current} of {genStep.total} — {genStep.label}
+                </span>
+                <Loader size={12} className="animate-spin" style={{ color: 'var(--brand-primary)' }} />
+              </div>
+              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                <motion.div
+                  className="h-full rounded-full"
+                  style={{ background: 'var(--brand-primary)' }}
+                  animate={{ width: `${((genStep.current - 1) / genStep.total) * 100}%` }}
+                  transition={{ duration: 0.4 }}
+                />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Detected sections */}
         <AnimatePresence>
@@ -248,47 +361,102 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
             >
-              <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-                Detected Sections ({sections.length})
-              </h2>
+              {/* Header row */}
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={toggleAll}
+                  disabled={generating}
+                  className="flex items-center gap-2 text-sm font-semibold"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  {allSelected
+                    ? <CheckSquare size={15} style={{ color: 'var(--brand-primary)' }} />
+                    : <Square size={15} style={{ color: 'var(--text-muted)' }} />
+                  }
+                  {sections.length} section{sections.length !== 1 ? 's' : ''} detected
+                  {!allSelected && selected.size > 0 && (
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                      · {selected.size} selected
+                    </span>
+                  )}
+                </button>
+
+                <motion.button
+                  onClick={handleGenerateSelected}
+                  disabled={generating || noneSelected}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                  style={{
+                    background: 'var(--brand-primary)',
+                    color: 'oklch(0.98 0.002 260)',
+                    opacity: generating || noneSelected ? 0.45 : 1,
+                    cursor: generating || noneSelected ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {generating
+                    ? <Loader size={10} className="animate-spin" />
+                    : <ChevronRight size={10} />
+                  }
+                  Generate {selected.size > 0 ? `(${selected.size})` : ''}
+                </motion.button>
+              </div>
+
               <div className="space-y-2">
-                {sections.map((section, i) => (
-                  <motion.div
-                    key={i}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.05 }}
-                    className="flex items-center gap-3 px-4 py-3.5 rounded-xl border"
-                    style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                        {section.sectionNumber} — {section.label}
-                      </p>
-                      <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                        {section.family} · {section.text.length.toLocaleString()} chars
-                      </p>
-                    </div>
-                    <motion.button
-                      onClick={() => handleGenerate(section)}
-                      disabled={generating}
-                      whileHover={{ scale: 1.02 }}
-                      whileTap={{ scale: 0.97 }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium shrink-0"
-                      style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)', opacity: generating ? 0.5 : 1 }}
+                {sections.map((section, i) => {
+                  const isSelected = selected.has(i)
+                  const isDone = genDone.has(i)
+                  const errMsg = genErrors.get(i)
+                  const isActive = genStep && sections.findIndex((_, idx) => idx === i) !== -1
+
+                  return (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.05 }}
+                      onClick={() => !generating && toggleSelect(i)}
+                      className="flex items-center gap-3 px-4 py-3.5 rounded-xl border cursor-pointer transition-all"
+                      style={{
+                        background: isSelected ? 'oklch(0.65 0.18 270 / 0.06)' : 'var(--surface-1)',
+                        borderColor: isSelected ? 'oklch(0.65 0.18 270 / 0.3)' : 'var(--border-subtle)',
+                        opacity: generating && !isDone ? 0.7 : 1,
+                      }}
                     >
-                      {generating ? <Loader size={10} className="animate-spin" /> : null}
-                      Generate Table
-                      <ChevronRight size={10} />
-                    </motion.button>
-                  </motion.div>
-                ))}
+                      {/* Checkbox */}
+                      <div className="shrink-0">
+                        {isDone
+                          ? <CheckSquare size={16} style={{ color: 'var(--status-comply)' }} />
+                          : errMsg
+                            ? <AlertCircle size={16} style={{ color: 'var(--status-not-comply)' }} />
+                            : isSelected
+                              ? <CheckSquare size={16} style={{ color: 'var(--brand-primary)' }} />
+                              : <Square size={16} style={{ color: 'var(--text-muted)' }} />
+                        }
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                          {section.sectionNumber} — {section.label}
+                        </p>
+                        <p className="text-xs mt-0.5 truncate" style={{ color: errMsg ? 'var(--status-not-comply)' : 'var(--text-muted)' }}>
+                          {errMsg ?? `${section.family} · ${section.text.length.toLocaleString()} chars`}
+                        </p>
+                      </div>
+
+                      {/* Active spinner */}
+                      {generating && isActive && !isDone && !errMsg && (
+                        <Loader size={13} className="animate-spin shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                      )}
+                    </motion.div>
+                  )
+                })}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Manual product family selection — always shown after parsing */}
+        {/* Manual product family selection — shown after parsing when no sections found */}
         <AnimatePresence>
           {parsed && extractedText && (
             <motion.div
@@ -308,6 +476,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
                 <select
                   value={manualFamily}
                   onChange={e => setManualFamily(e.target.value)}
+                  disabled={generating}
                   className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
                   style={{
                     background: 'var(--surface-2)',
@@ -321,16 +490,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
                   ))}
                 </select>
                 <motion.button
-                  onClick={() => {
-                    if (!manualFamily) return
-                    handleGenerate({
-                      sectionNumber: '1',
-                      title: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
-                      family: manualFamily,
-                      label: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
-                      text: extractedText.slice(0, 12000),
-                    })
-                  }}
+                  onClick={handleGenerateManual}
                   disabled={!manualFamily || generating}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.97 }}
