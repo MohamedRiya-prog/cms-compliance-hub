@@ -38,14 +38,19 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
   const [parsing, setParsing] = useState(false)
   const [generating, setGenerating] = useState(false)
   const [sections, setSections] = useState<DetectedSection[]>([])
+  const [parsed, setParsed] = useState(false)
   const [error, setError] = useState('')
   const [uploadedDocId, setUploadedDocId] = useState<string | null>(null)
   const [extractedText, setExtractedText] = useState('')
+  const [manualFamily, setManualFamily] = useState('')
 
   const handleFile = useCallback((f: File) => {
     setFile(f)
     setSections([])
     setError('')
+    setParsed(false)
+    setExtractedText('')
+    setManualFamily('')
   }, [])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -74,9 +79,10 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
       if (!res.ok) throw new Error(data.error)
       setSections(data.sections ?? [])
       setExtractedText(data.text ?? pasteText)
+      setParsed(true)
 
-      if (data.sections.length === 0) {
-        setError('No HVAC sections detected. Try selecting a section manually below.')
+      if ((data.sections ?? []).length === 0) {
+        setError('No HVAC sections were auto-detected. Select a product family below to generate manually.')
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Parse failed')
@@ -277,6 +283,68 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
                     </motion.button>
                   </motion.div>
                 ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Manual product family selection — always shown after parsing */}
+        <AnimatePresence>
+          {parsed && extractedText && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-6 rounded-xl border p-4"
+              style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+            >
+              <p className="text-sm font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
+                {sections.length > 0 ? 'Or generate manually' : 'Select product family'}
+              </p>
+              <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                Choose a product family and generate a compliance table from the full document text.
+              </p>
+              <div className="flex gap-2">
+                <select
+                  value={manualFamily}
+                  onChange={e => setManualFamily(e.target.value)}
+                  className="flex-1 rounded-lg px-3 py-2 text-sm outline-none"
+                  style={{
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border-default)',
+                    color: manualFamily ? 'var(--text-primary)' : 'var(--text-muted)',
+                  }}
+                >
+                  <option value="">Select product family…</option>
+                  {Object.entries(PRODUCT_FAMILIES).map(([code, label]) => (
+                    <option key={code} value={code}>{label} ({code})</option>
+                  ))}
+                </select>
+                <motion.button
+                  onClick={() => {
+                    if (!manualFamily) return
+                    handleGenerate({
+                      sectionNumber: '1',
+                      title: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
+                      family: manualFamily,
+                      label: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
+                      text: extractedText.slice(0, 12000),
+                    })
+                  }}
+                  disabled={!manualFamily || generating}
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold shrink-0"
+                  style={{
+                    background: 'var(--brand-primary)',
+                    color: 'oklch(0.98 0.002 260)',
+                    opacity: !manualFamily || generating ? 0.5 : 1,
+                    cursor: !manualFamily || generating ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {generating ? <Loader size={10} className="animate-spin" /> : <ChevronRight size={10} />}
+                  Generate
+                </motion.button>
               </div>
             </motion.div>
           )}

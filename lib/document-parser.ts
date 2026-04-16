@@ -24,7 +24,8 @@ export function detectSections(text: string): DetectedSection[] {
   const sections: DetectedSection[] = []
 
   // Split text into sections by common numbering patterns
-  const sectionRegex = /(?:^|\n)((?:SECTION\s+)?\d+[\.\d]*\s+[A-Z][^\n]{3,80})/gm
+  // Handles: "15820 FIRE DAMPERS", "SECTION 15820 FIRE DAMPERS", "SECTION 15820 - FIRE DAMPERS"
+  const sectionRegex = /(?:^|\n)((?:SECTION\s+)?\d+[\.\d]*\s*[-–—]?\s*[A-Z][^\n]{3,80})/gm
   const matches = [...text.matchAll(sectionRegex)]
 
   if (matches.length === 0) {
@@ -87,9 +88,20 @@ export async function parseDOCX(buffer: Buffer): Promise<string> {
 export async function parseXLSX(buffer: Buffer): Promise<string> {
   const XLSX = await import('xlsx')
   const workbook = XLSX.read(buffer, { type: 'buffer' })
-  return workbook.SheetNames.map(name =>
-    XLSX.utils.sheet_to_txt(workbook.Sheets[name])
-  ).join('\n\n')
+
+  const parts: string[] = []
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    // Use row-array form so we control how cells are joined (spaces, not tabs)
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' }) as unknown[][]
+    const lines = rows
+      .map(row => row.map(cell => String(cell ?? '').trim()).filter(Boolean).join('  '))
+      .filter(line => line.trim().length > 0)
+    if (lines.length > 0) {
+      parts.push(`[Sheet: ${sheetName}]\n` + lines.join('\n'))
+    }
+  }
+  return parts.join('\n\n')
 }
 
 export async function parseDocument(

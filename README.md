@@ -1,208 +1,131 @@
 # CMS Compliance Hub
 
-> **Internal HVAC specification compliance engine for Century Mechanical Systems (CMS) / Excelair**
+**The fastest way to check if CMS / Excelair products comply with project specifications.**
 
-A full-stack web application that automates the analysis of project specification documents against CMS product data, generating structured compliance reports powered by Claude AI.
-
----
-
-## What it does
-
-Engineers upload project specification PDFs or Word documents. The system extracts relevant clauses, compares them against CMS product technical data, and produces a structured compliance table — clause by clause — with statuses (Comply / Not Comply / Noted / Not Part of Proposal). Reports can be reviewed, edited, re-verified via AI chat, and exported to Excel.
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|---|---|
-| Framework | Next.js 16 (App Router) |
-| Language | TypeScript |
-| Database | PostgreSQL via Supabase |
-| Auth | Supabase Auth |
-| Storage | Supabase Storage |
-| AI Engine | Claude claude-sonnet-4-6 (Anthropic) |
-| ORM / Schema | Prisma 7 (schema reference) |
-| Styling | Tailwind CSS v4 + oklch design tokens |
-| Animation | Framer Motion |
-| Export | ExcelJS |
-| Document Parsing | Mammoth (DOCX), pdf-parse (PDF) |
-
----
-
-## Features
-
-### Projects
-- Create projects with client, location, contractor, main contractor, consultant, and auto-generated reference numbers (`CMS-2026-001`)
-- Contractor / consultant / main contractor fields backed by a searchable company database
-- Company request flow — engineers can request unlisted companies, admins approve
-
-### Compliance Reports
-- Upload spec documents (PDF / DOCX)
-- AI-generated compliance table with clause-by-clause analysis
-- Filter rows by status
-- Inline editing of product response, status, and remarks
-- Re-verify individual clauses via AI chat panel
-- Export to `.xlsx`
-
-### Admin Tools
-- **Products** — Markdown-based product data editor with live preview
-- **Rules** — Global compliance rules applied to every report (admin-only)
-- **Companies** — Paginated company database with CSV bulk import, role tagging (contractor / main contractor / consultant), and location data
-
-### Access Control
-- Role-based: `admin` vs `engineer`
-- Admins: full access including Rules, Companies management, product editing
-- Engineers: project work + read-only settings; can request company additions
-- Mobile: read-only compliance view + export only (no generation workflow)
-
-### Mobile
-- Responsive layout with hamburger drawer navigation
-- Compliance tables horizontally scrollable
-- Generation features hidden on small screens; download always available
-
----
-
-## Project Structure
-
-```
-cms-compliance-hub/
-├── app/
-│   ├── (auth)/              # Login & register pages
-│   ├── (dashboard)/         # Main app — projects, reports, settings
-│   └── api/                 # API routes
-│       ├── companies/       # Company CRUD + import + request flow
-│       ├── compliance/      # Report generation, chat, export, row edits
-│       ├── documents/       # Upload & parse spec documents
-│       ├── projects/        # Project CRUD + auto reference numbers
-│       └── admin/           # Products & rules (admin only)
-├── components/
-│   ├── layout/sidebar.tsx   # Collapsible sidebar + mobile drawer
-│   └── ui/                  # Reusable UI (SearchableSelect, etc.)
-├── lib/
-│   ├── prompt-builder.ts    # Assembles AI prompts from product data + rules
-│   ├── document-parser.ts   # PDF / DOCX text extraction
-│   ├── compliance-validator.ts
-│   └── supabase/            # Server, client, admin Supabase clients
-├── prisma/schema.prisma     # Database schema reference
-└── scripts/seed.ts          # Product data seeder
-```
+Upload a spec document, select your product family, and get a full compliance table in minutes — reviewed clause by clause, exportable to Excel, and ready to share with your team.
 
 ---
 
 ## Getting Started
 
-### Prerequisites
-- Node.js 20+
-- A [Supabase](https://supabase.com) project
-- An [Anthropic](https://console.anthropic.com) API key
+### 1. Log in
+Visit the app and sign in with your CMS email. If you don't have an account, use the Register link on the login page. Contact your admin if you need access.
 
-### 1. Clone & install
+### 2. Create a Project
+Click **New Project** from the dashboard. Fill in the project details:
 
-```bash
-git clone https://github.com/MohamedRiya-prog/cms-compliance-hub.git
-cd cms-compliance-hub
-npm install
-```
-
-### 2. Environment variables
-
-Create a `.env.local` file:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-ANTHROPIC_API_KEY=your-anthropic-key
-```
-
-### 3. Database setup
-
-Run the following in your Supabase SQL Editor to create the required tables:
-
-```sql
--- See prisma/schema.prisma for the full schema
--- Key tables: profiles, projects, spec_documents, compliance_reports,
---             compliance_rows, chat_messages, product_data,
---             compliance_rules, compliance_examples,
---             companies, company_requests
-```
-
-### 4. Seed product data
-
-```bash
-npm run db:seed
-```
-
-### 5. Run locally
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
+- **Project Name** — required
+- **Client** — the end client or building owner
+- **Location** — city / country
+- **Contractor / Main Contractor / Consultant** — select from the dropdown (searchable). If a company isn't listed, you can request it to be added.
+- **Project Number** — auto-generated in `CMS-2026-001` format, no need to fill this in.
 
 ---
 
-## Deployment
+## Generating a Compliance Report
 
-The app is deployed on [Vercel](https://vercel.com). On every push to `main`, Vercel automatically rebuilds and deploys.
+### Step 1 — Upload a Spec Document
+Inside your project, click **Upload Spec**. You can upload:
+- PDF files
+- Word documents (`.docx`)
 
-**Required environment variables in Vercel:**
+The system will extract the relevant specification text automatically.
 
-| Variable | Description |
+### Step 2 — Generate the Report
+After uploading, select the **product family** (e.g. BDD, EVFD, FAL) and click **Generate**. The AI engine analyses the specification against CMS product data and produces a compliance table.
+
+> Generation typically takes 30–60 seconds depending on document length.
+
+### Step 3 — Review the Table
+Each row in the table represents one specification clause. Each row has:
+
+| Column | Description |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server only) |
-| `ANTHROPIC_API_KEY` | Claude API key |
+| **Clause** | The spec clause reference |
+| **Requirement** | What the spec requires |
+| **Product Response** | How the CMS product responds to that requirement |
+| **Status** | Comply / Not Comply / Noted / Not Part of Proposal |
+| **Remark** | Additional notes |
 
-**After deploying**, add your Vercel URL to Supabase:
-- **Authentication → URL Configuration → Site URL**
-- **Redirect URLs** → `https://your-app.vercel.app/api/auth/callback`
-
----
-
-## Database Schema Overview
-
-```
-profiles          — user roles (admin / engineer)
-projects          — client projects with metadata
-spec_documents    — uploaded PDF/DOCX files
-compliance_reports — AI-generated compliance tables
-compliance_rows   — individual clause rows
-chat_messages     — AI chat history per report
-product_data      — CMS product technical data (per family)
-compliance_rules  — global rules applied to all reports
-companies         — contractor / consultant / main contractor database
-company_requests  — pending company addition requests
-```
+Click any cell in **Product Response**, **Status**, or **Remark** to edit it directly.
 
 ---
 
-## Role Reference
+## Filtering & Navigation
 
-| Action | Engineer | Admin |
-|---|---|---|
-| Create / view projects | ✅ | ✅ |
-| Upload specs & generate reports | ✅ | ✅ |
-| Edit compliance rows | ✅ | ✅ |
-| Export reports | ✅ | ✅ |
-| View Products | ✅ | ✅ |
-| Edit Products | ❌ | ✅ |
-| View / Edit Rules | ❌ | ✅ |
-| Manage Companies | ❌ | ✅ |
-| Request company addition | ✅ | ✅ |
-| Approve company requests | ❌ | ✅ |
+Use the filter bar above the table to show only:
+- **All** — every clause
+- **Comply** — clauses the product meets
+- **Not Comply** — clauses that need attention
+- **Noted** — clauses flagged for review
+- **Not Part of Proposal** — out-of-scope items
 
 ---
 
-## Making a User Admin
+## Re-verifying with AI
 
+Click the **chat icon** (top right of the report) to open the AI assistant panel.
+
+- Click any row in the table to reference it in the chat
+- Ask Claude to re-verify the clause, suggest an alternative response, or explain the product data
+- If Claude suggests an update to a row, you'll see an **Accept / Dismiss** card — accept it to apply the change instantly
+
+---
+
+## Exporting
+
+When the report is ready, click **Export** to download a formatted `.xlsx` Excel file containing the full compliance table.
+
+> On mobile devices, only the Export button is available. Generating new reports and using the chat panel require a desktop browser.
+
+---
+
+## Managing Projects
+
+From the **Dashboard**, you can see all your active projects with their compliance rate at a glance. Click any project to open it and view its reports and uploaded documents.
+
+---
+
+## Settings
+
+### Profile
+Update your display name from **Settings → Profile**.
+
+### Products *(all users — view only for engineers)*
+Browse CMS product technical data organised by product family. Admins can edit the data directly in the markdown editor.
+
+---
+
+## For Admins
+
+### Rules
+**Settings → Rules** — edit the global compliance rules that are applied to every generated report. Only visible to admins.
+
+### Companies
+**Settings → Companies** — manage the list of contractors, main contractors, and consultants used in project dropdowns.
+
+- **Add** companies one at a time using the Add Company button
+- **Import** hundreds at a time using a CSV file (use the Download Template button for the correct format)
+- **Tag** each company with its role(s) — Contractor, Main Contractor, Consultant. You can click the role badges directly in the table to toggle them on/off
+- **Review requests** — when an engineer can't find a company in the dropdown, they can request it. Pending requests appear in the **Requests** tab with Approve / Reject options
+
+### Making Someone an Admin
+Run this in your Supabase SQL Editor:
 ```sql
-UPDATE profiles SET role = 'admin' WHERE id = 'user-uuid-here';
+UPDATE profiles SET role = 'admin' WHERE id = 'paste-user-uuid-here';
 ```
+The user's UUID can be found in **Supabase → Authentication → Users**.
 
 ---
 
-*Built for Century Mechanical Systems Factory LLC — internal use only*
+## Tips
+
+- **Project numbers** are assigned automatically — no need to track them manually
+- **Compliance rate** is shown on each project card on the dashboard so you can spot issues at a glance
+- **Edited rows** are marked with a small badge so you always know what was changed from the original AI output
+- **Low confidence** rows are flagged — these are clauses where the AI was less certain and should be reviewed carefully
+- On mobile, you can browse projects and download existing reports from anywhere
+
+---
+
+*CMS Compliance Hub — Century Mechanical Systems Factory LLC — Internal Use Only*
