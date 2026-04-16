@@ -4,8 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, type Variants } from 'framer-motion'
-import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Plus } from 'lucide-react'
-import { formatRelativeTime, formatStatus, getStatusBgClass } from '@/lib/utils'
+import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader } from 'lucide-react'
+import { formatRelativeTime } from '@/lib/utils'
 
 interface Report {
   id: string
@@ -59,6 +59,7 @@ const statusColorMap: Record<string, string> = {
 export function ProjectDetailClient({ project }: Props) {
   const router = useRouter()
   const [deleting, setDeleting] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
   async function handleDelete() {
     if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return
@@ -67,6 +68,28 @@ export function ProjectDetailClient({ project }: Props) {
     router.push('/')
     router.refresh()
   }
+
+  async function handleExportAll() {
+    setExporting(true)
+    try {
+      const res = await fetch(`/api/compliance/export?projectId=${project.id}`)
+      if (!res.ok) throw new Error('Export failed')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const safeName = project.name.replace(/[^a-z0-9]/gi, '_')
+      a.download = `${safeName}_Compliance.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      // silently fail — user will see nothing downloaded
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const hasReports = project.compliance_reports.length > 0
 
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto">
@@ -95,7 +118,29 @@ export function ProjectDetailClient({ project }: Props) {
           )}
         </div>
         <div className="flex gap-2 shrink-0">
-          {/* Upload Spec hidden on mobile — generation not available on small screens */}
+          {/* Export All — visible on all screen sizes when reports exist */}
+          {hasReports && (
+            <motion.button
+              onClick={handleExportAll}
+              disabled={exporting}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
+              style={{
+                background: 'var(--surface-2)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-default)',
+                opacity: exporting ? 0.6 : 1,
+              }}
+            >
+              {exporting
+                ? <Loader size={12} className="animate-spin" />
+                : <Download size={12} />
+              }
+              Export All
+            </motion.button>
+          )}
+          {/* Upload Spec hidden on mobile */}
           <Link href={`/projects/${project.id}/upload`} className="hidden md:block">
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
