@@ -231,6 +231,134 @@ export function ProjectDetailClient({ project }: Props) {
         )}
       </div>
 
+      {/* Compliance Overview — export preview */}
+      {hasReports && project.compliance_reports.some(r => r.summary) && (
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
+            Compliance Overview
+          </h2>
+          <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
+            {/* Table header */}
+            <div
+              className="grid text-xs font-semibold px-4 py-2.5"
+              style={{
+                gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
+                background: 'var(--surface-2)',
+                color: 'var(--text-muted)',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}
+            >
+              <span>Product</span>
+              <span className="text-center">Total</span>
+              <span className="text-center">Comply</span>
+              <span className="text-center">N/C</span>
+              <span className="text-center">Noted</span>
+              <span className="text-center">N/P</span>
+              <span className="text-center">Rate</span>
+            </div>
+
+            {/* Rows */}
+            {project.compliance_reports.map((report, i) => {
+              const s = report.summary
+              if (!s) return null
+              const rate = s.total > 0 ? Math.round((s.comply / s.total) * 100) : null
+              const rateColor = rate === null ? 'var(--text-muted)'
+                : rate >= 80 ? 'var(--status-comply)'
+                : rate >= 50 ? 'var(--status-noted)'
+                : 'var(--status-not-comply)'
+              const rateBg = rate === null ? 'transparent'
+                : rate >= 80 ? 'oklch(0.72 0.19 155 / 0.12)'
+                : rate >= 50 ? 'oklch(0.78 0.16 85 / 0.12)'
+                : 'oklch(0.68 0.22 25 / 0.12)'
+
+              return (
+                <Link key={report.id} href={`/projects/${project.id}/reports/${report.id}`}>
+                  <div
+                    className="grid items-center px-4 py-3 hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
+                    style={{
+                      gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
+                      borderBottom: i < project.compliance_reports.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                    }}
+                  >
+                    <div className="min-w-0 pr-3">
+                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                        {report.product_family}
+                      </p>
+                      <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                        {rate !== null && (
+                          <div
+                            className="h-full rounded-full"
+                            style={{ width: `${rate}%`, background: rateColor, opacity: 0.7 }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                    <span className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{s.total}</span>
+                    <span className="text-xs text-center font-medium" style={{ color: 'var(--status-comply)' }}>{s.comply}</span>
+                    <span className="text-xs text-center font-medium" style={{ color: s.notComply > 0 ? 'var(--status-not-comply)' : 'var(--text-muted)' }}>{s.notComply}</span>
+                    <span className="text-xs text-center" style={{ color: s.noted > 0 ? 'var(--status-noted)' : 'var(--text-muted)' }}>{s.noted}</span>
+                    <span className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{s.notPartOfProposal}</span>
+                    <div className="flex justify-center">
+                      {rate !== null && (
+                        <span
+                          className="text-xs font-bold px-2 py-0.5 rounded-full"
+                          style={{ color: rateColor, background: rateBg }}
+                        >
+                          {rate}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              )
+            })}
+
+            {/* Totals footer */}
+            {(() => {
+              const totals = project.compliance_reports.reduce(
+                (acc, r) => ({
+                  total: acc.total + (r.summary?.total ?? 0),
+                  comply: acc.comply + (r.summary?.comply ?? 0),
+                  notComply: acc.notComply + (r.summary?.notComply ?? 0),
+                  noted: acc.noted + (r.summary?.noted ?? 0),
+                  notPartOfProposal: acc.notPartOfProposal + (r.summary?.notPartOfProposal ?? 0),
+                }),
+                { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
+              )
+              const overallRate = totals.total > 0 ? Math.round((totals.comply / totals.total) * 100) : null
+              const rateColor = overallRate === null ? 'var(--text-muted)'
+                : overallRate >= 80 ? 'var(--status-comply)'
+                : overallRate >= 50 ? 'var(--status-noted)'
+                : 'var(--status-not-comply)'
+
+              return (
+                <div
+                  className="grid items-center px-4 py-2.5 text-xs font-semibold"
+                  style={{
+                    gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
+                    background: 'var(--surface-2)',
+                    borderTop: '1px solid var(--border-subtle)',
+                    color: 'var(--text-secondary)',
+                  }}
+                >
+                  <span>Total</span>
+                  <span className="text-center">{totals.total}</span>
+                  <span className="text-center" style={{ color: 'var(--status-comply)' }}>{totals.comply}</span>
+                  <span className="text-center" style={{ color: totals.notComply > 0 ? 'var(--status-not-comply)' : 'var(--text-muted)' }}>{totals.notComply}</span>
+                  <span className="text-center" style={{ color: totals.noted > 0 ? 'var(--status-noted)' : 'var(--text-muted)' }}>{totals.noted}</span>
+                  <span className="text-center" style={{ color: 'var(--text-muted)' }}>{totals.notPartOfProposal}</span>
+                  <div className="flex justify-center">
+                    {overallRate !== null && (
+                      <span className="font-bold" style={{ color: rateColor }}>{overallRate}%</span>
+                    )}
+                  </div>
+                </div>
+              )
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* Spec Documents */}
       {project.spec_documents.length > 0 && (
         <div>
