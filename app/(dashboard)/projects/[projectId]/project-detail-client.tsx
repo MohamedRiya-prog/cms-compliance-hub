@@ -3,9 +3,20 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { motion, type Variants } from 'framer-motion'
+import { motion } from 'framer-motion'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
+
+interface ComplianceRow {
+  id: string
+  sort_order: number
+  clause: string
+  requirement: string
+  product_response: string
+  status: string
+  remark: string
+}
 
 interface Report {
   id: string
@@ -16,7 +27,7 @@ interface Report {
   summary: { total: number; comply: number; notComply: number; noted: number; notPartOfProposal: number } | null
   created_at: string
   updated_at: string
-  compliance_rows: { id: string }[]
+  compliance_rows: ComplianceRow[]
 }
 
 interface SpecDoc {
@@ -43,23 +54,46 @@ interface Project {
 
 interface Props { project: Project }
 
-const container: Variants = { animate: { transition: { staggerChildren: 0.06 } } }
-const item: Variants = {
-  initial: { opacity: 0, y: 12 },
-  animate: { opacity: 1, y: 0 },
+const STATUS_BG: Record<string, string> = {
+  comply:               '#C6EFCE',
+  not_comply:           '#FFC7CE',
+  noted:                '#FFEB9C',
+  not_part_of_proposal: '#E8E8E8',
+  header:               '#D6E4F0',
+}
+const STATUS_TEXT: Record<string, string> = {
+  comply:               '#276221',
+  not_comply:           '#9C0006',
+  noted:                '#7D5A00',
+  not_part_of_proposal: '#444444',
+  header:               '#1F3864',
+}
+const STATUS_LABEL: Record<string, string> = {
+  comply:               'Comply',
+  not_comply:           'Not Comply',
+  noted:                'Noted',
+  not_part_of_proposal: 'Not Part of Proposal',
+  header:               '',
 }
 
-const statusColorMap: Record<string, string> = {
+const reportStatusColor: Record<string, string> = {
   generating: 'var(--text-muted)',
-  review: 'var(--status-noted)',
-  approved: 'var(--status-comply)',
-  exported: 'var(--brand-primary)',
+  review:     'var(--status-noted)',
+  approved:   'var(--status-comply)',
+  exported:   'var(--brand-primary)',
 }
 
 export function ProjectDetailClient({ project }: Props) {
   const router = useRouter()
-  const [deleting, setDeleting] = useState(false)
+  const [deleting,  setDeleting]  = useState(false)
   const [exporting, setExporting] = useState(false)
+
+  const hasReports = project.compliance_reports.length > 0
+
+  // Sort reports by created_at so the preview order is consistent
+  const sortedReports = [...project.compliance_reports].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  )
 
   async function handleDelete() {
     if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return
@@ -75,72 +109,55 @@ export function ProjectDetailClient({ project }: Props) {
       const res = await fetch(`/api/compliance/export?projectId=${project.id}`)
       if (!res.ok) throw new Error('Export failed')
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      const safeName = project.name.replace(/[^a-z0-9]/gi, '_')
-      a.download = `${safeName}_Compliance.xlsx`
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${project.name.replace(/[^a-z0-9]/gi, '_')}_Compliance.xlsx`
       a.click()
       URL.revokeObjectURL(url)
-    } catch {
-      // silently fail — user will see nothing downloaded
-    } finally {
+    } catch { /* silent */ } finally {
       setExporting(false)
     }
   }
 
-  const hasReports = project.compliance_reports.length > 0
-
   return (
-    <div className="p-4 md:p-6 max-w-5xl mx-auto">
-      {/* Breadcrumb */}
-      <Link href="/">
-        <button className="flex items-center gap-2 text-sm mb-6 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={14} /> Dashboard
-        </button>
-      </Link>
+    <div className="flex flex-col h-screen overflow-hidden">
 
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-6"
+      {/* Top bar */}
+      <div
+        className="shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 md:px-6 py-3 border-b"
+        style={{ borderColor: 'var(--border-default)', background: 'var(--surface-0)' }}
       >
-        <div>
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{project.name}</h1>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            {project.client && <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{project.client}</span>}
-            {project.location && <span className="text-sm" style={{ color: 'var(--text-muted)' }}>· {project.location}</span>}
-            {project.project_number && <span className="text-sm" style={{ color: 'var(--text-muted)' }}>· #{project.project_number}</span>}
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/">
+            <button className="flex items-center gap-1.5 text-xs hover:opacity-80 shrink-0" style={{ color: 'var(--text-muted)' }}>
+              <ArrowLeft size={13} /> Dashboard
+            </button>
+          </Link>
+          <span style={{ color: 'var(--border-default)' }}>·</span>
+          <div className="min-w-0">
+            <h1 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{project.name}</h1>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {project.client       && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{project.client}</span>}
+              {project.location     && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {project.location}</span>}
+              {project.project_number && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· #{project.project_number}</span>}
+            </div>
           </div>
-          {project.description && (
-            <p className="text-sm mt-2" style={{ color: 'var(--text-secondary)' }}>{project.description}</p>
-          )}
         </div>
-        <div className="flex gap-2 shrink-0">
-          {/* Export All — visible on all screen sizes when reports exist */}
+
+        <div className="flex items-center gap-2 shrink-0">
           {hasReports && (
             <motion.button
               onClick={handleExportAll}
               disabled={exporting}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium"
-              style={{
-                background: 'var(--surface-2)',
-                color: 'var(--text-secondary)',
-                border: '1px solid var(--border-default)',
-                opacity: exporting ? 0.6 : 1,
-              }}
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)', opacity: exporting ? 0.6 : 1 }}
             >
-              {exporting
-                ? <Loader size={12} className="animate-spin" />
-                : <Download size={12} />
-              }
+              {exporting ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
               Export All
             </motion.button>
           )}
-          {/* Upload Spec hidden on mobile */}
           <Link href={`/projects/${project.id}/upload`} className="hidden md:block">
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
@@ -160,230 +177,228 @@ export function ProjectDetailClient({ project }: Props) {
             <Trash2 size={14} />
           </button>
         </div>
-      </motion.div>
-
-      {/* Reports */}
-      <div className="mb-6">
-        <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-          Compliance Reports ({project.compliance_reports.length})
-        </h2>
-
-        {project.compliance_reports.length === 0 ? (
-          <div
-            className="flex flex-col items-center justify-center py-12 rounded-xl border"
-            style={{ borderColor: 'var(--border-subtle)', borderStyle: 'dashed' }}
-          >
-            <FileText size={32} className="mb-3" style={{ color: 'var(--text-muted)' }} />
-            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>No reports yet</p>
-            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Upload a spec document to generate compliance tables</p>
-            <Link href={`/projects/${project.id}/upload`}>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium" style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)' }}>
-                <Upload size={12} /> Upload Spec
-              </button>
-            </Link>
-          </div>
-        ) : (
-          <motion.div variants={container} initial="initial" animate="animate" className="space-y-2">
-            {project.compliance_reports.map(report => {
-              const total = report.summary?.total ?? report.compliance_rows.length
-              const comply = report.summary?.comply ?? 0
-              const rate = total > 0 ? Math.round((comply / total) * 100) : 0
-
-              return (
-                <motion.div key={report.id} variants={item}>
-                  <Link href={`/projects/${project.id}/reports/${report.id}`}>
-                    <motion.div
-                      whileHover={{ x: 2 }}
-                      className="flex items-center gap-4 px-4 py-3.5 rounded-xl border cursor-pointer"
-                      style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <h3 className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{report.title}</h3>
-                          <span
-                            className="text-xs px-2 py-0.5 rounded-full border capitalize"
-                            style={{ color: statusColorMap[report.status] ?? 'var(--text-muted)', background: 'var(--surface-2)', borderColor: 'var(--border-subtle)' }}
-                          >
-                            {report.status}
-                          </span>
-                        </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                          {report.product_family} · {total} clauses · {formatRelativeTime(report.updated_at)}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        {total > 0 && (
-                          <span
-                            className="text-sm font-bold"
-                            style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}
-                          >
-                            {rate}%
-                          </span>
-                        )}
-                        <ExternalLink size={14} style={{ color: 'var(--text-muted)' }} />
-                      </div>
-                    </motion.div>
-                  </Link>
-                </motion.div>
-              )
-            })}
-          </motion.div>
-        )}
       </div>
 
-      {/* Compliance Overview — export preview */}
-      {hasReports && project.compliance_reports.some(r => r.summary) && (
-        <div className="mb-6">
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-            Compliance Overview
-          </h2>
-          <div className="rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
-            {/* Table header */}
-            <div
-              className="grid text-xs font-semibold px-4 py-2.5"
-              style={{
-                gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
-                background: 'var(--surface-2)',
-                color: 'var(--text-muted)',
-                borderBottom: '1px solid var(--border-subtle)',
-              }}
-            >
-              <span>Product</span>
-              <span className="text-center">Total</span>
-              <span className="text-center">Comply</span>
-              <span className="text-center">N/C</span>
-              <span className="text-center">Noted</span>
-              <span className="text-center">N/P</span>
-              <span className="text-center">Rate</span>
+      {/* Panels */}
+      <PanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+
+        {/* Left — report list + spec docs */}
+        <Panel defaultSize={28} minSize={18} maxSize={44}>
+          <div className="h-full overflow-y-auto py-4 px-3 space-y-5" style={{ background: 'var(--surface-1)' }}>
+
+            {/* Reports */}
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-2" style={{ color: 'var(--text-muted)' }}>
+                Reports ({project.compliance_reports.length})
+              </p>
+
+              {project.compliance_reports.length === 0 ? (
+                <div className="px-2">
+                  <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>No reports yet</p>
+                  <Link href={`/projects/${project.id}/upload`}>
+                    <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium w-full justify-center" style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)' }}>
+                      <Upload size={11} /> Upload Spec
+                    </button>
+                  </Link>
+                </div>
+              ) : (
+                <div className="space-y-0.5">
+                  {sortedReports.map(report => {
+                    const total  = report.summary?.total ?? report.compliance_rows.length
+                    const comply = report.summary?.comply ?? 0
+                    const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+
+                    return (
+                      <Link key={report.id} href={`/projects/${project.id}/reports/${report.id}`}>
+                        <motion.div
+                          whileHover={{ x: 2 }}
+                          className="flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all"
+                          style={{ background: 'transparent' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                {report.product_family}
+                              </p>
+                              <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
+                                · {report.status}
+                              </span>
+                            </div>
+                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                              {total} clauses · {formatRelativeTime(report.updated_at)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {rate !== null && (
+                              <span
+                                className="text-xs font-bold"
+                                style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}
+                              >
+                                {rate}%
+                              </span>
+                            )}
+                            <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
+                          </div>
+                        </motion.div>
+                      </Link>
+                    )
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Rows */}
-            {project.compliance_reports.map((report, i) => {
-              const s = report.summary
-              if (!s) return null
-              const rate = s.total > 0 ? Math.round((s.comply / s.total) * 100) : null
-              const rateColor = rate === null ? 'var(--text-muted)'
-                : rate >= 80 ? 'var(--status-comply)'
-                : rate >= 50 ? 'var(--status-noted)'
-                : 'var(--status-not-comply)'
-              const rateBg = rate === null ? 'transparent'
-                : rate >= 80 ? 'oklch(0.72 0.19 155 / 0.12)'
-                : rate >= 50 ? 'oklch(0.78 0.16 85 / 0.12)'
-                : 'oklch(0.68 0.22 25 / 0.12)'
-
-              return (
-                <Link key={report.id} href={`/projects/${project.id}/reports/${report.id}`}>
-                  <div
-                    className="grid items-center px-4 py-3 hover:bg-[var(--surface-2)] transition-colors cursor-pointer"
-                    style={{
-                      gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
-                      borderBottom: i < project.compliance_reports.length - 1 ? '1px solid var(--border-subtle)' : 'none',
-                    }}
-                  >
-                    <div className="min-w-0 pr-3">
-                      <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                        {report.product_family}
-                      </p>
-                      <div className="mt-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
-                        {rate !== null && (
-                          <div
-                            className="h-full rounded-full"
-                            style={{ width: `${rate}%`, background: rateColor, opacity: 0.7 }}
-                          />
-                        )}
+            {/* Spec documents */}
+            {project.spec_documents.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-2" style={{ color: 'var(--text-muted)' }}>
+                  Documents
+                </p>
+                <div className="space-y-0.5">
+                  {project.spec_documents.map(doc => (
+                    <div key={doc.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'transparent' }}>
+                      <FileText size={13} style={{ color: 'var(--text-muted)' }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{doc.file_name}</p>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{doc.file_type.toUpperCase()} · {formatRelativeTime(doc.uploaded_at)}</p>
                       </div>
                     </div>
-                    <span className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{s.total}</span>
-                    <span className="text-xs text-center font-medium" style={{ color: 'var(--status-comply)' }}>{s.comply}</span>
-                    <span className="text-xs text-center font-medium" style={{ color: s.notComply > 0 ? 'var(--status-not-comply)' : 'var(--text-muted)' }}>{s.notComply}</span>
-                    <span className="text-xs text-center" style={{ color: s.noted > 0 ? 'var(--status-noted)' : 'var(--text-muted)' }}>{s.noted}</span>
-                    <span className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>{s.notPartOfProposal}</span>
-                    <div className="flex justify-center">
-                      {rate !== null && (
-                        <span
-                          className="text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{ color: rateColor, background: rateBg }}
-                        >
-                          {rate}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </Link>
-              )
-            })}
-
-            {/* Totals footer */}
-            {(() => {
-              const totals = project.compliance_reports.reduce(
-                (acc, r) => ({
-                  total: acc.total + (r.summary?.total ?? 0),
-                  comply: acc.comply + (r.summary?.comply ?? 0),
-                  notComply: acc.notComply + (r.summary?.notComply ?? 0),
-                  noted: acc.noted + (r.summary?.noted ?? 0),
-                  notPartOfProposal: acc.notPartOfProposal + (r.summary?.notPartOfProposal ?? 0),
-                }),
-                { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
-              )
-              const overallRate = totals.total > 0 ? Math.round((totals.comply / totals.total) * 100) : null
-              const rateColor = overallRate === null ? 'var(--text-muted)'
-                : overallRate >= 80 ? 'var(--status-comply)'
-                : overallRate >= 50 ? 'var(--status-noted)'
-                : 'var(--status-not-comply)'
-
-              return (
-                <div
-                  className="grid items-center px-4 py-2.5 text-xs font-semibold"
-                  style={{
-                    gridTemplateColumns: '1fr 52px 52px 52px 52px 52px 56px',
-                    background: 'var(--surface-2)',
-                    borderTop: '1px solid var(--border-subtle)',
-                    color: 'var(--text-secondary)',
-                  }}
-                >
-                  <span>Total</span>
-                  <span className="text-center">{totals.total}</span>
-                  <span className="text-center" style={{ color: 'var(--status-comply)' }}>{totals.comply}</span>
-                  <span className="text-center" style={{ color: totals.notComply > 0 ? 'var(--status-not-comply)' : 'var(--text-muted)' }}>{totals.notComply}</span>
-                  <span className="text-center" style={{ color: totals.noted > 0 ? 'var(--status-noted)' : 'var(--text-muted)' }}>{totals.noted}</span>
-                  <span className="text-center" style={{ color: 'var(--text-muted)' }}>{totals.notPartOfProposal}</span>
-                  <div className="flex justify-center">
-                    {overallRate !== null && (
-                      <span className="font-bold" style={{ color: rateColor }}>{overallRate}%</span>
-                    )}
-                  </div>
-                </div>
-              )
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* Spec Documents */}
-      {project.spec_documents.length > 0 && (
-        <div>
-          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
-            Uploaded Documents
-          </h2>
-          <div className="space-y-2">
-            {project.spec_documents.map(doc => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 px-4 py-3 rounded-xl border"
-                style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
-              >
-                <FileText size={16} style={{ color: 'var(--text-muted)' }} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>{doc.file_name}</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {doc.file_type.toUpperCase()} · {formatRelativeTime(doc.uploaded_at)}
-                  </p>
+                  ))}
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        </div>
-      )}
+        </Panel>
+
+        {/* Resize handle */}
+        <PanelResizeHandle className="group relative w-1 flex items-center justify-center cursor-col-resize">
+          <div className="w-px h-full transition-colors group-hover:bg-[var(--brand-primary)]" style={{ background: 'var(--border-default)' }} />
+          <div className="absolute flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+            {[0, 1, 2].map(i => <div key={i} className="w-1 h-1 rounded-full" style={{ background: 'var(--brand-primary)' }} />)}
+          </div>
+        </PanelResizeHandle>
+
+        {/* Right — combined export preview */}
+        <Panel defaultSize={72} minSize={40}>
+          <div className="h-full flex flex-col" style={{ background: 'var(--surface-0)' }}>
+
+            {/* Preview header */}
+            <div
+              className="px-5 py-2.5 shrink-0 border-b flex items-center justify-between"
+              style={{ borderColor: 'var(--border-default)' }}
+            >
+              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Export Preview</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                {sortedReports.reduce((n, r) => n + r.compliance_rows.length, 0)} total clauses across {sortedReports.length} report{sortedReports.length !== 1 ? 's' : ''}
+              </span>
+            </div>
+
+            {sortedReports.length === 0 ? (
+              <div className="flex-1 flex items-center justify-center">
+                <div className="text-center">
+                  <FileText size={32} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No reports yet — upload a spec to generate compliance tables</p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex-1 overflow-auto">
+                {/* Excel-style table */}
+                <table className="w-full border-collapse text-xs" style={{ tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '90px' }} />
+                    <col style={{ width: '28%' }} />
+                    <col style={{ width: '28%' }} />
+                    <col style={{ width: '120px' }} />
+                    <col />
+                  </colgroup>
+
+                  {/* Sticky column headers */}
+                  <thead className="sticky top-0 z-10">
+                    <tr>
+                      {['Clause', 'Requirement', 'Product Response', 'Status', 'Remark'].map(h => (
+                        <th
+                          key={h}
+                          className="px-2.5 py-2 text-left font-semibold border"
+                          style={{ background: '#2E75B6', color: '#FFFFFF', borderColor: '#1F5C99', fontSize: '11px' }}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {sortedReports.map(report => {
+                      const rows = [...report.compliance_rows].sort((a, b) => a.sort_order - b.sort_order)
+                      const total  = report.summary?.total ?? rows.length
+                      const comply = report.summary?.comply ?? 0
+                      const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+
+                      return (
+                        <>
+                          {/* Product section header */}
+                          <tr key={`hdr-${report.id}`}>
+                            <td
+                              colSpan={5}
+                              className="px-3 py-2 border font-semibold"
+                              style={{ background: '#1F3864', color: '#FFFFFF', borderColor: '#142654', fontSize: '11px' }}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span>{report.title}</span>
+                                <div className="flex items-center gap-3 font-normal text-xs" style={{ color: '#BDD7EE' }}>
+                                  <span>{total} clauses</span>
+                                  {rate !== null && <span>{rate}% comply</span>}
+                                  <Link href={`/projects/${project.id}/reports/${report.id}`} onClick={e => e.stopPropagation()}>
+                                    <span className="flex items-center gap-1 underline underline-offset-2 hover:text-white transition-colors cursor-pointer">
+                                      Open <ExternalLink size={10} />
+                                    </span>
+                                  </Link>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {rows.length === 0 ? (
+                            <tr key={`empty-${report.id}`}>
+                              <td colSpan={5} className="px-3 py-2 border text-center" style={{ color: '#888', borderColor: '#D0D0D0', background: '#FAFAFA' }}>
+                                No rows
+                              </td>
+                            </tr>
+                          ) : rows.map(row => {
+                            const bg   = STATUS_BG[row.status]   ?? '#FFFFFF'
+                            const text = STATUS_TEXT[row.status] ?? '#000000'
+                            return (
+                              <tr key={row.id} style={{ background: bg }}>
+                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: '#D0D0D0', color: text, fontWeight: row.status === 'header' ? 600 : 400 }}>
+                                  {row.clause}
+                                </td>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                  {row.requirement}
+                                </td>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                  {row.product_response}
+                                </td>
+                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: '#D0D0D0', color: text, fontWeight: 500 }}>
+                                  {STATUS_LABEL[row.status] ?? row.status}
+                                </td>
+                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: '#D0D0D0', color: text }}>
+                                  {row.remark}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </Panel>
+
+      </PanelGroup>
     </div>
   )
 }
