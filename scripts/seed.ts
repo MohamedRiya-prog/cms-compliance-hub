@@ -34,11 +34,11 @@ function headingToFamilyCode(heading: string): string | null {
   if (h.startsWith('ESD') && !h.includes('EFSD')) return 'ESD'
   if (h.includes('ACTUATOR')) return 'ACTUATORS'
   if (h.includes('SOUND ATTENUATOR') || h.includes('DUCT SILENCER')) return 'SA'
+  if (h.includes('LOW LEAKAGE') && h.includes('ALUMINUM')) return 'LLVCD'  // must come before VCD catch-all
   if (h.includes('VOLUME CONTROL') && (h.includes('CLASS I') || h.includes('LEKAGE'))) return 'VCD_C1'
   if (h.includes('VOLUME CONTROL') || h.includes('BALANCING DAMPER')) return 'VCD'
   if (h.includes('GAS TIGHT')) return 'GTD'
   if (h.includes('PRESSURE INDEPENDENT') || h.includes('VAV')) return 'VAV'
-  if (h.includes('LOW LEAKAGE') && h.includes('ALUMINUM')) return 'LLVCD'
   if (h.includes('DEFLECTION') || (h.includes('GRILLE') && !h.includes('LINEAR'))) return 'SDGR'
   if (h.includes('LINEAR BAR') || (h.includes('LINEAR') && h.includes('GRILLE'))) return 'LBG'
   if (h.includes('LINEAR SLOT') || h.includes('SLOT DIFFUSER')) return 'LSD'
