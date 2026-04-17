@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
+import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import {
   ArrowLeft, Download, CheckCircle, MessageSquare, Filter,
   ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw, Trash2
@@ -61,6 +62,7 @@ interface Props {
   report: Report
   project: { id: string; name: string }
   initialRows: Row[]
+  isAdmin?: boolean
 }
 
 type FilterStatus = 'all' | 'comply' | 'not_comply' | 'noted' | 'not_part_of_proposal' | 'header'
@@ -111,7 +113,7 @@ interface RowUpdate {
   remark: string
 }
 
-export function ReportViewClient({ report, project, initialRows }: Props) {
+export function ReportViewClient({ report, project, initialRows, isAdmin }: Props) {
   const [rows, setRows] = useState<Row[]>(initialRows)
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null)
@@ -513,8 +515,11 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
 
       {/* Body — resizable split */}
       <div className="flex flex-1 overflow-hidden">
+        {chatOpen ? (
+        <PanelGroup direction="horizontal" className="flex-1">
+        <Panel defaultSize={65} minSize={35}>
         {/* Left: Table */}
-        <div className={cn('flex flex-col overflow-hidden transition-all', chatOpen ? 'flex-1' : 'flex-1')}>
+        <div className="flex flex-col overflow-hidden h-full">
           {/* Filter bar */}
           <div
             className="flex items-center gap-1.5 px-4 py-2 border-b shrink-0 overflow-x-auto"
@@ -724,19 +729,21 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
             )}
           </div>
         </div>
+        </Panel>
 
-        {/* Right: Chat Panel — desktop only */}
-        <div className="hidden md:flex">
-        <AnimatePresence>
-          {chatOpen && (
-            <motion.div
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 340, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
-              className="flex flex-col border-l overflow-hidden shrink-0"
-              style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
-            >
+        {/* Resize handle */}
+        <PanelResizeHandle className="hidden md:flex w-1.5 items-center justify-center group relative" style={{ background: 'var(--border-subtle)' }}>
+          <div className="w-0.5 h-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'var(--brand-primary)' }} />
+        </PanelResizeHandle>
+
+        {/* Right: Chat Panel */}
+        <Panel defaultSize={35} minSize={22} maxSize={55}>
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="hidden md:flex flex-col h-full border-l"
+          style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+        >
               {/* Chat header */}
               <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex items-center justify-between gap-2">
@@ -873,13 +880,68 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                   </motion.button>
                 </div>
                 <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                  Shift+Enter for new line
+                  {isAdmin ? 'Admin — unlimited access' : 'Shift+Enter for new line · 800 token limit per message'}
                 </p>
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-        </div>
+        </motion.div>
+        </Panel>
+        </PanelGroup>
+        ) : (
+          /* Chat closed — table takes full width */
+          <div className="flex flex-col flex-1 overflow-hidden">
+            {/* Filter bar */}
+            <div
+              className="flex items-center gap-1.5 px-4 py-2 border-b shrink-0 overflow-x-auto"
+              style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+            >
+              <Filter size={12} style={{ color: 'var(--text-muted)' }} className="shrink-0" />
+              {(['all', 'comply', 'not_comply', 'noted', 'not_part_of_proposal', 'header'] as FilterStatus[]).map(f => (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className="text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-all"
+                  style={{
+                    background: filter === f
+                      ? (f === 'all' ? 'var(--surface-3)' : (STATUS_BG[f] ?? 'var(--surface-3)'))
+                      : 'transparent',
+                    color: filter === f
+                      ? (f === 'all' ? 'var(--text-primary)' : STATUS_COLORS[f])
+                      : 'var(--text-muted)',
+                    fontWeight: filter === f ? 500 : 400,
+                  }}
+                >
+                  {f === 'all' ? `All (${rows.length})` : formatStatus(f)}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1 overflow-auto">
+              <table className="w-full text-xs border-collapse" style={{ minWidth: 700 }}>
+                <thead>
+                  <tr className="sticky top-0 z-10" style={{ background: 'var(--surface-glass)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--border-subtle)' }}>
+                    {['Clause', 'Requirement', 'Product Response', 'Status', 'Remark'].map(h => (
+                      <th key={h} className="text-left px-3 py-2.5 font-semibold" style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(row => (
+                    <tr key={row.id} style={{ borderBottom: '1px solid var(--border-subtle)', background: 'transparent' }}>
+                      <td className="px-3 py-2.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{row.clause}</td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-primary)', maxWidth: 280 }}><div className="line-clamp-3">{row.requirement}</div></td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-primary)', maxWidth: 240 }}><div className="line-clamp-3">{row.product_response || '—'}</div></td>
+                      <td className="px-3 py-2.5 text-xs">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium whitespace-nowrap" style={{ color: STATUS_COLORS[row.status] ?? 'var(--text-muted)', background: STATUS_BG[row.status] ?? 'var(--surface-2)', borderColor: STATUS_BORDER[row.status] ?? 'var(--border-default)' }}>
+                          {formatStatus(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--text-secondary)', maxWidth: 220 }}><div className="line-clamp-2">{row.remark || '—'}</div></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

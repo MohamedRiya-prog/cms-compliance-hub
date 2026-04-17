@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase/server'
 import { buildChatSystemPrompt } from '@/lib/prompt-builder'
+import { getAuthContext } from '@/lib/auth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -16,14 +16,14 @@ export async function POST(
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const { reportId } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return new Response('Unauthorized', { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return new Response('Unauthorized', { status: 401 })
+  const { user, isAdmin, db, supabase } = ctx
 
   const { message, referencedRowId } = await req.json()
 
   // Load report with rows
-  const { data: report } = await supabase
+  const { data: report } = await db
     .from('compliance_reports')
     .select(`
       *,
@@ -39,7 +39,7 @@ export async function POST(
     compliance_rows: Array<{ id: string; sort_order: number; clause: string; requirement: string; product_response: string; status: string; remark: string }>;
   }
 
-  if (!typedReport || typedReport.projects?.user_id !== user.id) {
+  if (!typedReport || (!isAdmin && typedReport.projects?.user_id !== user.id)) {
     return new Response('Not found', { status: 404 })
   }
 
@@ -47,7 +47,7 @@ export async function POST(
   const systemPrompt = await buildChatSystemPrompt(typedReport.product_family)
 
   // Fetch chat history
-  const { data: history } = await supabase
+  const { data: history } = await db
     .from('chat_messages')
     .select('role, content')
     .eq('report_id', reportId)
@@ -113,7 +113,7 @@ Rules:
   const fullSystemPrompt = systemPrompt + modeInstruction
 
   // Save user message
-  await supabase.from('chat_messages').insert({
+  await db.from('chat_messages').insert({
     report_id: reportId,
     role: 'user',
     content: message,
@@ -121,9 +121,12 @@ Rules:
   })
 
   // Stream response
+  // Token limits: admin = full access, non-admin = 800 for general chat
+  const maxTokens = referencedRow ? 512 : (isAdmin ? 2048 : 800)
+
   const stream = anthropic.messages.stream({
     model: 'claude-opus-4-6',
-    max_tokens: referencedRow ? 512 : 2048,
+    max_tokens: maxTokens,
     system: fullSystemPrompt,
     messages,
   })
@@ -141,7 +144,7 @@ Rules:
       stream.on('finalMessage', async () => {
         controller.close()
         // Save assistant message
-        await supabase.from('chat_messages').insert({
+        await db.from('chat_messages').insert({
           report_id: reportId,
           role: 'assistant',
           content: fullResponse,

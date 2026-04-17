@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { z } from 'zod'
+import { getAuthContext } from '@/lib/auth'
 
 const updateSchema = z.object({
   productResponse: z.string().optional(),
@@ -15,19 +15,18 @@ export async function PATCH(
   { params }: { params: Promise<{ reportId: string; rowId: string }> }
 ) {
   const { reportId, rowId } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { user, isAdmin, db } = ctx
 
-  // Verify ownership through project chain
-  const { data: report } = await supabase
+  const { data: report } = await db
     .from('compliance_reports')
     .select('id, projects!inner(user_id)')
     .eq('id', reportId)
     .single()
 
-  const reportWithProject = report as unknown as { id: string; projects: { user_id: string } }
-  if (!reportWithProject || reportWithProject.projects?.user_id !== user.id) {
+  const typed = report as unknown as { id: string; projects: { user_id: string } }
+  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -45,7 +44,7 @@ export async function PATCH(
   if (parsed.data.clause !== undefined) updateData.clause = parsed.data.clause
   if (parsed.data.requirement !== undefined) updateData.requirement = parsed.data.requirement
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from('compliance_rows')
     .update(updateData)
     .eq('id', rowId)

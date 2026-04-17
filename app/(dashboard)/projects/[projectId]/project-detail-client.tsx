@@ -53,7 +53,7 @@ interface Project {
   compliance_reports: Report[]
 }
 
-interface Props { project: Project }
+interface Props { project: Project; isAdmin?: boolean }
 
 const STATUS_BG: Record<string, string> = {
   comply:               'oklch(0.72 0.19 155 / 0.15)',
@@ -86,7 +86,7 @@ const reportStatusColor: Record<string, string> = {
 
 interface DocPreview { id: string; fileName: string; fileType: string; text: string }
 
-export function ProjectDetailClient({ project }: Props) {
+export function ProjectDetailClient({ project, isAdmin }: Props) {
   const router = useRouter()
   const [deleting,  setDeleting]  = useState(false)
   const [exporting, setExporting] = useState(false)

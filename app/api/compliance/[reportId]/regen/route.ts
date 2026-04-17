@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { createClient } from '@/lib/supabase/server'
 import { buildSystemPrompt } from '@/lib/prompt-builder'
 import { parseClaudeResponse, computeSummary } from '@/lib/compliance-validator'
+import { getAuthContext } from '@/lib/auth'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -13,9 +13,9 @@ export async function POST(
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const { reportId } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { user, isAdmin, db } = ctx
 
   // Optional instructions from the user (e.g. "use triple-V blades instead of airfoil")
   let instructions: string | undefined
@@ -26,7 +26,7 @@ export async function POST(
       : undefined
   } catch { /* no body is fine */ }
 
-  const { data: report } = await supabase
+  const { data: report } = await db
     .from('compliance_reports')
     .select('id, spec_text, product_family, projects!inner(user_id)')
     .eq('id', reportId)
@@ -37,7 +37,7 @@ export async function POST(
     projects: { user_id: string }
   }
 
-  if (!typed || typed.projects?.user_id !== user.id) {
+  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   if (!typed.spec_text) {
@@ -59,10 +59,10 @@ export async function POST(
   const summary = computeSummary(rows)
 
   // Replace all existing rows
-  await supabase.from('compliance_rows').delete().eq('report_id', reportId)
+  await db.from('compliance_rows').delete().eq('report_id', reportId)
 
   if (rows.length > 0) {
-    const { error } = await supabase.from('compliance_rows').insert(
+    const { error } = await db.from('compliance_rows').insert(
       rows.map((row, i) => ({
         report_id: reportId,
         sort_order: i,
@@ -78,13 +78,13 @@ export async function POST(
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  await supabase
+  await db
     .from('compliance_reports')
     .update({ summary, status: 'review', updated_at: new Date().toISOString() })
     .eq('id', reportId)
 
   // Return fresh rows so the client can replace its state
-  const { data: newRows } = await supabase
+  const { data: newRows } = await db
     .from('compliance_rows')
     .select('id, sort_order, clause, requirement, product_response, status, remark, confidence, is_edited')
     .eq('report_id', reportId)

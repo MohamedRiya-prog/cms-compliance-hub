@@ -20,11 +20,13 @@ interface Project {
   location: string | null
   updated_at: string
   compliance_reports: Report[]
+  ownerName?: string
 }
 
 interface Props {
   userName: string
   projects: Project[]
+  isAdmin?: boolean
 }
 
 const container: Variants = {
@@ -54,7 +56,7 @@ function projectStats(projects: Project[]) {
   return { totalReports, rate, pending }
 }
 
-export function DashboardClient({ userName, projects }: Props) {
+export function DashboardClient({ userName, projects, isAdmin }: Props) {
   const { totalReports, rate, pending } = projectStats(projects)
 
   return (
@@ -108,7 +110,7 @@ export function DashboardClient({ userName, projects }: Props) {
       {/* Projects Grid */}
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
-          Projects
+          {isAdmin ? 'All Projects' : 'Projects'}
         </h2>
         <Link href="/projects/new">
           <motion.button
@@ -173,6 +175,11 @@ export function DashboardClient({ userName, projects }: Props) {
                         {project.client && (
                           <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
                             {project.client}
+                          </p>
+                        )}
+                        {isAdmin && project.ownerName && (
+                          <p className="text-[10px] mt-0.5 truncate font-medium" style={{ color: 'var(--brand-primary)' }}>
+                            {project.ownerName}
                           </p>
                         )}
                       </div>
