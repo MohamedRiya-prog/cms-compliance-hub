@@ -56,11 +56,11 @@ interface Project {
 interface Props { project: Project }
 
 const STATUS_BG: Record<string, string> = {
-  comply:               'oklch(0.72 0.19 155 / 0.12)',
-  not_comply:           'oklch(0.68 0.22 25  / 0.12)',
-  noted:                'oklch(0.78 0.16 85  / 0.12)',
-  not_part_of_proposal: 'oklch(0.55 0.02 260 / 0.08)',
-  header:               'oklch(0.65 0.18 270 / 0.10)',
+  comply:               'oklch(0.72 0.19 155 / 0.15)',
+  not_comply:           'oklch(0.68 0.22 25  / 0.15)',
+  noted:                'oklch(0.78 0.16 85  / 0.15)',
+  not_part_of_proposal: 'oklch(0.55 0.02 260 / 0.10)',
+  header:               'oklch(0.65 0.18 270 / 0.12)',
 }
 const STATUS_TEXT: Record<string, string> = {
   comply:               'var(--status-comply)',

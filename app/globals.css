@@ -3,39 +3,55 @@
 /* ── Light theme overrides ─────────────────────────────────────────────────── */
 [data-theme="light"] {
   --surface-0: oklch(0.98 0.002 260);
-  --surface-1: oklch(0.96 0.004 260);
-  --surface-2: oklch(0.92 0.006 260);
-  --surface-3: oklch(0.87 0.008 260);
-  --surface-glass: oklch(0.96 0.004 260 / 0.85);
+  --surface-1: oklch(0.95 0.004 260);
+  --surface-2: oklch(0.91 0.006 260);
+  --surface-3: oklch(0.85 0.008 260);
+  --surface-glass: oklch(0.96 0.004 260 / 0.9);
 
-  --text-primary:   oklch(0.15 0.01 260);
-  --text-secondary: oklch(0.38 0.01 260);
-  --text-muted:     oklch(0.58 0.01 260);
+  --text-primary:   oklch(0.14 0.01 260);
+  --text-secondary: oklch(0.32 0.01 260);
+  --text-muted:     oklch(0.46 0.01 260);
 
-  --border-subtle:  oklch(0.88 0.005 260);
-  --border-default: oklch(0.81 0.008 260);
-  --border-active:  oklch(0.72 0.01  260);
+  --border-subtle:  oklch(0.83 0.006 260);
+  --border-default: oklch(0.74 0.01  260);
+  --border-active:  oklch(0.60 0.015 260);
 
-  --shadow-sm: 0 1px 3px  oklch(0 0 0 / 0.08);
-  --shadow-md: 0 4px 16px oklch(0 0 0 / 0.10);
-  --shadow-lg: 0 12px 48px oklch(0 0 0 / 0.14);
-  --brand-glow: oklch(0.65 0.18 270 / 0.10);
+  /* Status colours — must be dark enough to read on near-white backgrounds */
+  --status-comply:     oklch(0.38 0.18 155);
+  --status-not-comply: oklch(0.44 0.20 25);
+  --status-noted:      oklch(0.42 0.14 55);
+  --status-not-part:   oklch(0.38 0.02 260);
+
+  /* Brand — slightly deeper so it reads on white */
+  --brand-primary:   oklch(0.52 0.18 270);
+  --brand-secondary: oklch(0.48 0.15 250);
+
+  --shadow-sm:  0 1px 3px  oklch(0 0 0 / 0.08);
+  --shadow-md:  0 4px 16px oklch(0 0 0 / 0.10);
+  --shadow-lg:  0 12px 48px oklch(0 0 0 / 0.14);
+  --shadow-glow: 0 0 30px oklch(0.52 0.18 270 / 0.12);
+  --brand-glow:  oklch(0.52 0.18 270 / 0.10);
 
   /* shadcn compat */
   --background: oklch(0.98 0.002 260);
-  --foreground: oklch(0.15 0.01 260);
-  --card: oklch(0.96 0.004 260);
-  --card-foreground: oklch(0.15 0.01 260);
+  --foreground: oklch(0.14 0.01 260);
+  --card: oklch(0.95 0.004 260);
+  --card-foreground: oklch(0.14 0.01 260);
   --popover: oklch(0.98 0.002 260);
-  --popover-foreground: oklch(0.15 0.01 260);
-  --secondary: oklch(0.92 0.006 260);
-  --secondary-foreground: oklch(0.15 0.01 260);
-  --muted: oklch(0.92 0.006 260);
-  --muted-foreground: oklch(0.52 0.01 260);
-  --accent: oklch(0.87 0.008 260);
-  --accent-foreground: oklch(0.15 0.01 260);
-  --border: oklch(0.81 0.008 260);
-  --input: oklch(0.88 0.005 260);
+  --popover-foreground: oklch(0.14 0.01 260);
+  --primary: oklch(0.52 0.18 270);
+  --primary-foreground: oklch(0.98 0.002 260);
+  --secondary: oklch(0.91 0.006 260);
+  --secondary-foreground: oklch(0.14 0.01 260);
+  --muted: oklch(0.91 0.006 260);
+  --muted-foreground: oklch(0.46 0.01 260);
+  --accent: oklch(0.85 0.008 260);
+  --accent-foreground: oklch(0.14 0.01 260);
+  --destructive: oklch(0.44 0.20 25);
+  --destructive-foreground: oklch(0.98 0.002 260);
+  --border: oklch(0.74 0.01 260);
+  --input: oklch(0.83 0.006 260);
+  --ring: oklch(0.52 0.18 270);
 }
 
 @layer base {
@@ -130,6 +146,11 @@
 
   ::selection {
     background-color: oklch(0.65 0.18 270 / 0.3);
+  }
+
+  [data-theme="light"] ::selection {
+    background-color: oklch(0.52 0.18 270 / 0.25);
+    color: oklch(0.14 0.01 260);
   }
 
   ::-webkit-scrollbar {

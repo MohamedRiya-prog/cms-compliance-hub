@@ -73,6 +73,22 @@ const STATUS_COLORS: Record<string, string> = {
   header: 'var(--brand-primary)',
 }
 
+// Literal oklch values so they can be used as valid CSS backgrounds/borders
+const STATUS_BG: Record<string, string> = {
+  comply:               'oklch(0.72 0.19 155 / 0.14)',
+  not_comply:           'oklch(0.68 0.22 25  / 0.14)',
+  noted:                'oklch(0.78 0.16 85  / 0.14)',
+  not_part_of_proposal: 'oklch(0.55 0.02 260 / 0.10)',
+  header:               'oklch(0.65 0.18 270 / 0.10)',
+}
+const STATUS_BORDER: Record<string, string> = {
+  comply:               'oklch(0.72 0.19 155 / 0.40)',
+  not_comply:           'oklch(0.68 0.22 25  / 0.40)',
+  noted:                'oklch(0.78 0.16 85  / 0.40)',
+  not_part_of_proposal: 'oklch(0.55 0.02 260 / 0.28)',
+  header:               'oklch(0.65 0.18 270 / 0.35)',
+}
+
 const container: Variants = { animate: { transition: { staggerChildren: 0.025 } } }
 const rowVariant: Variants = {
   initial: { opacity: 0, x: -8 },
@@ -377,11 +393,11 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
         {/* Summary chips */}
         <div className="hidden md:flex items-center gap-2">
           {[
-            { label: 'Comply', value: summary.comply, color: 'var(--status-comply)' },
-            { label: 'Not Comply', value: summary.notComply ?? 0, color: 'var(--status-not-comply)' },
-            { label: 'Noted', value: summary.noted, color: 'var(--status-noted)' },
+            { label: 'Comply',     value: summary.comply,            color: 'var(--status-comply)',     bg: STATUS_BG.comply },
+            { label: 'Not Comply', value: summary.notComply ?? 0,    color: 'var(--status-not-comply)', bg: STATUS_BG.not_comply },
+            { label: 'Noted',      value: summary.noted,             color: 'var(--status-noted)',      bg: STATUS_BG.noted },
           ].map(s => (
-            <span key={s.label} className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: s.color, background: s.color + '20' }}>
+            <span key={s.label} className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ color: s.color, background: s.bg }}>
               {s.value} {s.label}
             </span>
           ))}
@@ -512,7 +528,7 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                 className="text-xs px-2.5 py-1 rounded-full whitespace-nowrap transition-all"
                 style={{
                   background: filter === f
-                    ? (f === 'all' ? 'var(--surface-3)' : STATUS_COLORS[f] + '25')
+                    ? (f === 'all' ? 'var(--surface-3)' : (STATUS_BG[f] ?? 'var(--surface-3)'))
                     : 'transparent',
                   color: filter === f
                     ? (f === 'all' ? 'var(--text-primary)' : STATUS_COLORS[f])
@@ -635,8 +651,8 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                               className="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-medium cursor-pointer whitespace-nowrap"
                               style={{
                                 color: STATUS_COLORS[row.status] ?? 'var(--text-muted)',
-                                background: (STATUS_COLORS[row.status] ?? '#888') + '18',
-                                borderColor: (STATUS_COLORS[row.status] ?? '#888') + '40',
+                                background: STATUS_BG[row.status] ?? 'var(--surface-2)',
+                                borderColor: STATUS_BORDER[row.status] ?? 'var(--border-default)',
                               }}
                               onClick={() => startEdit(row.id, 'status', row.status)}
                             >
