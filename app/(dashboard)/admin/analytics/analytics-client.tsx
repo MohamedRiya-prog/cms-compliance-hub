@@ -5,7 +5,8 @@ import { motion } from 'framer-motion'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList, Cell,
 } from 'recharts'
-import { FileText, CheckCircle, Users, Hash, X } from 'lucide-react'
+import Link from 'next/link'
+import { FileText, CheckCircle, Users, Hash, X, ExternalLink } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -35,6 +36,8 @@ interface GapItem {
   clause: string
   count: number
   type: string
+  reportId: string
+  projectId: string
 }
 
 interface UserStat {
@@ -303,7 +306,7 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                    {['Clause', 'Requirement', 'Occurrences', 'Type'].map(h => (
+                    {['Clause', 'Requirement', 'Occurrences', 'Type', ''].map(h => (
                       <th
                         key={h}
                         className="text-left pb-2 pr-4 font-medium"
@@ -318,39 +321,43 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
                   {familyGaps.map((gap, i) => (
                     <tr
                       key={i}
+                      className="group transition-colors"
                       style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                     >
                       <td className="py-2.5 pr-4 font-mono" style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         {gap.clause}
                       </td>
                       <td className="py-2.5 pr-4" style={{ color: 'var(--text-primary)', maxWidth: 360 }}>
-                        <span
-                          className="line-clamp-3"
-                          title={gap.requirement}
-                        >
+                        <span className="line-clamp-3" title={gap.requirement}>
                           {gap.requirement}
                         </span>
                       </td>
                       <td className="py-2.5 pr-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
                         {gap.count}
                       </td>
-                      <td className="py-2.5">
+                      <td className="py-2.5 pr-4">
                         <span
                           className="px-2 py-0.5 rounded-full text-xs font-medium"
                           style={
                             gap.type === 'not_comply'
-                              ? {
-                                  background: 'oklch(0.68 0.22 25 / 0.15)',
-                                  color: 'var(--status-not-comply)',
-                                }
-                              : {
-                                  background: 'oklch(0.78 0.16 85 / 0.15)',
-                                  color: 'var(--status-noted)',
-                                }
+                              ? { background: 'oklch(0.68 0.22 25 / 0.15)', color: 'var(--status-not-comply)' }
+                              : { background: 'oklch(0.78 0.16 85 / 0.15)', color: 'var(--status-noted)' }
                           }
                         >
                           {gap.type === 'not_comply' ? 'Not Comply' : 'Noted'}
                         </span>
+                      </td>
+                      <td className="py-2.5">
+                        <Link
+                          href={`/projects/${gap.projectId}/reports/${gap.reportId}`}
+                          className="flex items-center gap-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                          style={{ color: 'var(--brand-primary)' }}
+                          title="Open compliance report"
+                        >
+                          <ExternalLink size={11} /> Open
+                        </Link>
                       </td>
                     </tr>
                   ))}

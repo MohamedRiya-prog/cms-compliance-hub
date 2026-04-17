@@ -28,7 +28,7 @@ export default async function AdminAnalyticsPage() {
   // Fetch failing rows for gap analysis
   const { data: failingRows } = await db
     .from('compliance_rows')
-    .select('status, requirement, clause, compliance_reports!inner(product_family, id)')
+    .select('status, requirement, clause, compliance_reports!inner(id, product_family, project_id)')
     .in('status', ['not_comply', 'noted'])
 
   // Fetch all profiles (no email column — get that from auth)
@@ -51,7 +51,7 @@ export default async function AdminAnalyticsPage() {
     status: string
     requirement: string
     clause: string
-    compliance_reports: { product_family: string; id: string }
+    compliance_reports: { id: string; product_family: string; project_id: string }
   }
   type ProfileRow = {
     id: string
@@ -127,6 +127,8 @@ export default async function AdminAnalyticsPage() {
     clause: string
     count: number
     type: string
+    reportId: string
+    projectId: string
   }>()
 
   for (const row of rowsArr) {
@@ -140,18 +142,20 @@ export default async function AdminAnalyticsPage() {
         clause: row.clause ?? '',
         count: 0,
         type: row.status,
+        reportId: row.compliance_reports.id,
+        projectId: row.compliance_reports.project_id,
       })
     }
     gapMap.get(key)!.count++
   }
 
-  const gapsByFamily = new Map<string, Array<{ family: string; requirement: string; clause: string; count: number; type: string }>>()
+  const gapsByFamily = new Map<string, Array<{ family: string; requirement: string; clause: string; count: number; type: string; reportId: string; projectId: string }>>()
   for (const gap of gapMap.values()) {
     if (!gapsByFamily.has(gap.family)) gapsByFamily.set(gap.family, [])
     gapsByFamily.get(gap.family)!.push(gap)
   }
 
-  const gaps: Array<{ family: string; requirement: string; clause: string; count: number; type: string }> = []
+  const gaps: Array<{ family: string; requirement: string; clause: string; count: number; type: string; reportId: string; projectId: string }> = []
   for (const [, familyGaps] of gapsByFamily) {
     const top5 = familyGaps.sort((a, b) => b.count - a.count).slice(0, 5)
     gaps.push(...top5)
