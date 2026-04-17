@@ -214,14 +214,10 @@ function NavLinks({
 function LogoMark() {
   return (
     <motion.div
-      className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0"
-      style={{ background: 'oklch(0.65 0.18 270 / 0.15)', border: '1px solid oklch(0.65 0.18 270 / 0.3)' }}
+      className="flex items-center justify-center w-8 h-8 rounded-lg shrink-0 overflow-hidden"
       whileHover={{ scale: 1.05 }}
     >
-      <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
-        <path d="M4 20L10 8L16 14L22 6" stroke="oklch(0.65 0.18 270)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-        <circle cx="22" cy="6" r="2.5" fill="oklch(0.72 0.19 155)"/>
-      </svg>
+      <img src="/logo.png" alt="CMS Logo" className="w-full h-full object-contain" />
     </motion.div>
   )
 }
