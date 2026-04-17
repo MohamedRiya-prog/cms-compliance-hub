@@ -126,6 +126,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [redoAllLoading, setRedoAllLoading] = useState(false)
   const [reportSummary, setReportSummary] = useState(report.summary)
+  const [reportStatus, setReportStatus] = useState(report.status)
   const [exporting, setExporting] = useState(false)
   const [approving, setApproving] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -209,11 +210,12 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
 
   async function handleApprove() {
     setApproving(true)
-    await fetch(`/api/compliance/${report.id}`, {
+    const res = await fetch(`/api/compliance/${report.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     })
+    if (res.ok) setReportStatus('approved')
     setApproving(false)
   }
 
@@ -381,10 +383,14 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
               {report.title}
             </h1>
             <span
-              className="text-xs px-2 py-0.5 rounded-full border"
-              style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'var(--surface-2)' }}
+              className="text-xs px-2 py-0.5 rounded-full border capitalize"
+              style={{
+                color: reportStatus === 'approved' ? 'var(--status-comply)' : reportStatus === 'review' ? 'var(--status-noted)' : 'var(--text-muted)',
+                borderColor: reportStatus === 'approved' ? 'oklch(0.72 0.19 155 / 0.4)' : reportStatus === 'review' ? 'oklch(0.78 0.16 85 / 0.4)' : 'var(--border-subtle)',
+                background: reportStatus === 'approved' ? STATUS_BG.comply : reportStatus === 'review' ? STATUS_BG.noted : 'var(--surface-2)',
+              }}
             >
-              {report.status}
+              {reportStatus}
             </span>
           </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -477,6 +483,24 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
               )}
             </AnimatePresence>
           </div>
+
+          {reportStatus === 'review' && (
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={handleApprove}
+              disabled={approving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              style={{
+                background: 'oklch(0.72 0.19 155 / 0.12)',
+                color: 'var(--status-comply)',
+                borderColor: 'oklch(0.72 0.19 155 / 0.35)',
+                opacity: approving ? 0.6 : 1,
+              }}
+            >
+              {approving ? <Loader size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+              Approve
+            </motion.button>
+          )}
 
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
