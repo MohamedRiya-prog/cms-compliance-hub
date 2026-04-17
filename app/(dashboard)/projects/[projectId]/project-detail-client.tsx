@@ -92,6 +92,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
   const router = useRouter()
   const [deleting,  setDeleting]  = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingReportId, setExportingReportId] = useState<string | null>(null)
   const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
   const [docPreview,  setDocPreview]  = useState<DocPreview | null>(null)
   const [docLoading,  setDocLoading]  = useState<string | null>(null)
@@ -166,8 +167,155 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
     }
   }
 
+  async function handleExportReport(reportId: string, title: string) {
+    setExportingReportId(reportId)
+    try {
+      const res = await fetch(`/api/compliance/export?reportId=${reportId}`)
+      if (!res.ok) throw new Error('Export failed')
+      const blob = await res.blob()
+      const url  = URL.createObjectURL(blob)
+      const a    = document.createElement('a')
+      a.href     = url
+      a.download = `${title.replace(/[^a-z0-9]/gi, '_')}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { /* silent */ } finally {
+      setExportingReportId(null)
+    }
+  }
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <>
+    {/* ── Mobile layout ── */}
+    <div className="md:hidden flex flex-col min-h-screen" style={{ background: 'var(--surface-0)' }}>
+      {/* Mobile header */}
+      <div
+        className="flex items-center gap-3 px-4 py-3 border-b sticky top-0 z-10"
+        style={{ background: 'var(--surface-0)', borderColor: 'var(--border-default)' }}
+      >
+        <Link href="/">
+          <button className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }}>
+            <ArrowLeft size={18} />
+          </button>
+        </Link>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{project.name}</h1>
+          {project.client && <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{project.client}</p>}
+        </div>
+        {hasReports && (
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleExportAll}
+            disabled={exporting}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold shrink-0"
+            style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)', opacity: exporting ? 0.6 : 1 }}
+          >
+            {exporting ? <Loader size={13} className="animate-spin" /> : <Download size={13} />}
+            Export All
+          </motion.button>
+        )}
+      </div>
+
+      {/* Mobile report list */}
+      <div className="flex-1 p-4 space-y-3">
+        {sortedReports.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <FileText size={36} className="mb-3" style={{ color: 'var(--text-muted)' }} />
+            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>No reports yet</p>
+            <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>Upload a spec document to generate compliance reports</p>
+            <Link href={`/projects/${project.id}/upload`}>
+              <button className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)' }}>
+                <Upload size={15} /> Upload Spec
+              </button>
+            </Link>
+          </div>
+        ) : (
+          sortedReports.map(report => {
+            const total  = report.summary?.total ?? report.compliance_rows.length
+            const comply = report.summary?.comply ?? 0
+            const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+            const isExporting = exportingReportId === report.id
+            return (
+              <div
+                key={report.id}
+                className="rounded-2xl p-4 border"
+                style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                      {report.product_family}
+                    </p>
+                    <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                      {report.title}
+                    </p>
+                  </div>
+                  {rate !== null && (
+                    <span
+                      className="shrink-0 text-sm font-bold px-2.5 py-0.5 rounded-full"
+                      style={{
+                        background: rate >= 80 ? 'oklch(0.72 0.19 155 / 0.15)' : rate >= 50 ? 'oklch(0.78 0.16 85 / 0.15)' : 'oklch(0.68 0.22 25 / 0.15)',
+                        color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)',
+                      }}
+                    >
+                      {rate}%
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-xs px-2 py-0.5 rounded-full capitalize"
+                      style={{
+                        background: reportStatusColor[report.status] ? `${reportStatusColor[report.status]}20` : 'var(--surface-2)',
+                        color: reportStatusColor[report.status] ?? 'var(--text-muted)',
+                      }}
+                    >
+                      {report.status}
+                    </span>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {total} clauses
+                    </span>
+                  </div>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleExportReport(report.id, report.product_family)}
+                    disabled={isExporting}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold"
+                    style={{
+                      background: 'var(--surface-2)',
+                      color: 'var(--text-secondary)',
+                      border: '1px solid var(--border-default)',
+                      opacity: isExporting ? 0.6 : 1,
+                    }}
+                  >
+                    {isExporting ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
+                    Download
+                  </motion.button>
+                </div>
+              </div>
+            )
+          })
+        )}
+
+        {/* Upload more */}
+        {sortedReports.length > 0 && (
+          <Link href={`/projects/${project.id}/upload`}>
+            <div
+              className="flex items-center justify-center gap-2 py-4 rounded-2xl border text-sm font-medium mt-2"
+              style={{ borderColor: 'var(--border-subtle)', borderStyle: 'dashed', color: 'var(--text-muted)' }}
+            >
+              <Upload size={14} /> Upload another spec
+            </div>
+          </Link>
+        )}
+      </div>
+    </div>
+
+    {/* ── Desktop layout ── */}
+    <div className="hidden md:flex flex-col h-screen overflow-hidden">
 
       {/* Top bar */}
       <div
@@ -611,5 +759,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
 
       </PanelGroup>
     </div>
+    {/* end desktop layout */}
+    </>
   )
 }
