@@ -86,7 +86,7 @@ const reportStatusColor: Record<string, string> = {
   exported:   'var(--brand-primary)',
 }
 
-interface DocPreview { id: string; fileName: string; fileType: string; text: string }
+interface DocPreview { id: string; fileName: string; fileType: string; text: string; signedUrl?: string | null }
 
 export function ProjectDetailClient({ project, isAdmin }: Props) {
   const router = useRouter()
@@ -418,30 +418,47 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
             </div>
 
             {docPreview ? (
-              /* ── Spec document markdown viewer ── */
-              <div className="flex-1 overflow-auto px-8 py-6 prose-products">
-                {docPreview.text
-                  ? <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        table: ({ children }) => (
-                          <div className="table-outer"><table>{children}</table></div>
-                        ),
-                        // Render unrecognised blocks as preformatted so raw spec
-                        // sections (numbered clauses, indented lists) still look clean
-                        code: ({ children }) => (
-                          <pre className="whitespace-pre-wrap text-xs leading-relaxed rounded-lg p-3"
-                            style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-                            {children}
-                          </pre>
-                        ),
-                      }}
+              /* ── Spec document viewer — format-aware ── */
+              docPreview.fileType === 'pdf' && docPreview.signedUrl
+                ? /* PDF: show the original file in an inline viewer */
+                  <iframe
+                    src={docPreview.signedUrl}
+                    className="flex-1 w-full border-0"
+                    title={docPreview.fileName}
+                    style={{ minHeight: 0 }}
+                  />
+                : docPreview.fileType === 'text' && docPreview.fileName.toLowerCase().endsWith('.md')
+                ? /* Markdown file: render with full MD formatting */
+                  <div className="flex-1 overflow-auto px-8 py-6 prose-products">
+                    {docPreview.text
+                      ? <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            table: ({ children }) => (
+                              <div className="table-outer"><table>{children}</table></div>
+                            ),
+                            code: ({ children }) => (
+                              <pre className="whitespace-pre-wrap text-xs leading-relaxed rounded-lg p-3"
+                                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                {children}
+                              </pre>
+                            ),
+                          }}
+                        >
+                          {docPreview.text}
+                        </ReactMarkdown>
+                      : <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No text extracted from this document.</p>
+                    }
+                  </div>
+                : /* DOCX / XLSX / plain text / PDF without signed URL: clean plain text */
+                  <div className="flex-1 overflow-auto p-6">
+                    <pre
+                      className="whitespace-pre-wrap text-xs leading-relaxed"
+                      style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}
                     >
-                      {docPreview.text}
-                    </ReactMarkdown>
-                  : <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No text extracted from this document.</p>
-                }
-              </div>
+                      {docPreview.text || 'No text extracted from this document.'}
+                    </pre>
+                  </div>
             ) : sortedReports.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
