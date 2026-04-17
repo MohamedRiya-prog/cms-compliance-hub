@@ -208,7 +208,7 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
-        className="rounded-xl p-5 border mb-6"
+        className="rounded-xl p-5 border mb-6 overflow-hidden"
         style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
       >
         <h2 className="text-sm font-semibold mb-5" style={{ color: 'var(--text-secondary)' }}>
@@ -268,7 +268,6 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
       {/* ── Section 3: Gap analysis ──────────────────────────────────────── */}
       {displayFamily && (
         <motion.div
-          key={displayFamily}
           custom={2}
           initial="hidden"
           animate="visible"
@@ -277,7 +276,7 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
           style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
               Common Failing Clauses —{' '}
               <span style={{ color: 'var(--text-primary)' }}>{displayFamily}</span>
             </h2>
