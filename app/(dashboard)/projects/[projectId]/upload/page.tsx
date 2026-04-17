@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, use } from 'react'
+import { useState, useCallback, use, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, Upload, FileText, AlertCircle, ChevronRight, Loader, CheckSquare, Square } from 'lucide-react'
@@ -15,21 +15,40 @@ interface DetectedSection {
   text: string
 }
 
-const PRODUCT_FAMILIES: Record<string, string> = {
-  BDD_PRD: 'Backdraft & Pressure Relief Dampers',
-  EVFD: 'Fire Dampers',
-  EFD: 'Motorized Fire Dampers',
-  EFSD: 'Combination Fire & Smoke Dampers',
-  ESD: 'Smoke Dampers',
-  EVCD: 'Volume Control Dampers',
-  SA: 'Sound Attenuators',
-  FAL: 'Fresh Air Louvers',
-  PRD: 'Barometric Relief Dampers',
-}
-
 export default function UploadPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = use(params)
   const router = useRouter()
+
+  const [productFamilies, setProductFamilies] = useState<Record<string, string>>({})
+
+  // Built-in product families (hardcoded display names for products without labels in DB)
+  const BUILTIN_FAMILIES: Record<string, string> = {
+    BDD_PRD: 'Backdraft & Pressure Relief Dampers',
+    EVFD: 'Fire Dampers',
+    EFD: 'Motorized Fire Dampers',
+    EFSD: 'Combination Fire & Smoke Dampers',
+    ESD: 'Smoke Dampers',
+    EVCD: 'Volume Control Dampers',
+    SA: 'Sound Attenuators',
+    FAL: 'Fresh Air Louvers',
+    PRD: 'Barometric Relief Dampers',
+  }
+
+  // Load product families from API on mount (adds custom products to the built-in list)
+  useEffect(() => {
+    fetch('/api/admin/products')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: { family: string; label: string | null }[]) => {
+        const map: Record<string, string> = { ...BUILTIN_FAMILIES }
+        for (const row of rows) {
+          if (row.label && !(row.family in map)) {
+            map[row.family] = row.label
+          }
+        }
+        setProductFamilies(map)
+      })
+      .catch(() => setProductFamilies(BUILTIN_FAMILIES))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [file, setFile] = useState<File | null>(null)
   const [pasteText, setPasteText] = useState('')
@@ -193,7 +212,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
     if (!manualFamily) return
     setGenerating(true)
     setError('')
-    setGenStep({ current: 1, total: 1, label: PRODUCT_FAMILIES[manualFamily] ?? manualFamily })
+    setGenStep({ current: 1, total: 1, label: productFamilies[manualFamily] ?? manualFamily })
 
     try {
       const docId = await ensureDocUploaded()
@@ -205,7 +224,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
           productFamily: manualFamily,
           specDocumentId: docId,
           projectId,
-          title: PRODUCT_FAMILIES[manualFamily] ?? manualFamily,
+          title: productFamilies[manualFamily] ?? manualFamily,
         }),
       })
       const data = await res.json()
@@ -485,7 +504,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
                   }}
                 >
                   <option value="">Select product family…</option>
-                  {Object.entries(PRODUCT_FAMILIES).map(([code, label]) => (
+                  {Object.entries(productFamilies).map(([code, label]) => (
                     <option key={code} value={code}>{label} ({code})</option>
                   ))}
                 </select>

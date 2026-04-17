@@ -37,7 +37,7 @@ interface Report {
   generationMetadata: Record<string, unknown> | null
 }
 
-const PRODUCT_FAMILIES: Record<string, string> = {
+const BUILTIN_FAMILIES: Record<string, string> = {
   BDD_PRD: 'Backdraft & Pressure Relief Dampers',
   EVFD:    'Fire Dampers',
   EFD:     'Motorized Fire Dampers',
@@ -136,8 +136,25 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
   const [regenFamily, setRegenFamily] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
   const [regenError, setRegenError] = useState('')
+  const [productFamilies, setProductFamilies] = useState<Record<string, string>>(BUILTIN_FAMILIES)
   const chatEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  // Load product families (includes custom ones from DB)
+  useEffect(() => {
+    fetch('/api/admin/products')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: { family: string; label: string | null }[]) => {
+        const map: Record<string, string> = { ...BUILTIN_FAMILIES }
+        for (const row of rows) {
+          if (row.label && !(row.family in map)) {
+            map[row.family] = row.label
+          }
+        }
+        setProductFamilies(map)
+      })
+      .catch(() => {})
+  }, [])
 
   const summary = reportSummary ?? { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
 
@@ -234,7 +251,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
           productFamily: regenFamily,
           specDocumentId: report.specDocumentId ?? undefined,
           projectId: project.id,
-          title: PRODUCT_FAMILIES[regenFamily] ?? regenFamily,
+          title: productFamilies[regenFamily] ?? regenFamily,
           force: true,
         }),
       })
@@ -469,7 +486,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
                     style={{ background: 'var(--surface-3)', border: '1px solid var(--border-default)', color: regenFamily ? 'var(--text-primary)' : 'var(--text-muted)' }}
                   >
                     <option value="">Select product family…</option>
-                    {Object.entries(PRODUCT_FAMILIES).map(([code, label]) => (
+                    {Object.entries(productFamilies).map(([code, label]) => (
                       <option key={code} value={code}>{label} ({code})</option>
                     ))}
                   </select>

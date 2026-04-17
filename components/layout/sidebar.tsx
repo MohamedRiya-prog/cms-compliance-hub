@@ -19,7 +19,7 @@ const navItems = [
 
 const settingsItems = [
   { href: '/settings/profile',   label: 'Profile',    icon: Settings,   adminOnly: false },
-  { href: '/settings/products',  label: 'Products',   icon: Package,    adminOnly: false },
+  { href: '/settings/products',  label: 'Products',   icon: Package,    adminOnly: true  },
   { href: '/settings/rules',     label: 'Rules',      icon: BookOpen,   adminOnly: true  },
   { href: '/settings/companies', label: 'Companies',  icon: Building2,  adminOnly: true  },
 ]
