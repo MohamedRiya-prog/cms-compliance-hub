@@ -31,10 +31,13 @@ export default async function AdminAnalyticsPage() {
     .select('status, requirement, clause, compliance_reports!inner(product_family, id)')
     .in('status', ['not_comply', 'noted'])
 
-  // Fetch all profiles
+  // Fetch all profiles (no email column — get that from auth)
   const { data: profiles } = await db
     .from('profiles')
-    .select('id, full_name, email')
+    .select('id, full_name')
+
+  // Fetch auth users for emails (requires service-role key)
+  const { data: authUsers } = await db.auth.admin.listUsers({ perPage: 1000 })
 
   type ReportRow = {
     id: string
@@ -53,7 +56,6 @@ export default async function AdminAnalyticsPage() {
   type ProfileRow = {
     id: string
     full_name: string | null
-    email: string | null
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -62,6 +64,9 @@ export default async function AdminAnalyticsPage() {
   const rowsArr = ((failingRows ?? []) as unknown as any[]) as FailingRow[]
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const profilesArr = ((profiles ?? []) as unknown as any[]) as ProfileRow[]
+
+  // Build email map from auth users
+  const emailMap = new Map((authUsers?.users ?? []).map(u => [u.id, u.email ?? '']))
 
   const profileMap = new Map(profilesArr.map(p => [p.id, p]))
 
@@ -182,10 +187,12 @@ export default async function AdminAnalyticsPage() {
   const users = Array.from(userMap.values())
     .map(u => {
       const prof = profileMap.get(u.userId)
+      const email = emailMap.get(u.userId) ?? ''
+      const name = prof?.full_name?.trim() || email.split('@')[0] || 'Unknown'
       return {
         userId: u.userId,
-        name: prof?.full_name ?? prof?.email ?? 'Unknown',
-        email: prof?.email ?? '',
+        name,
+        email,
         reports: u.reports,
         totalClauses: u.totalClauses,
         comply: u.comply,
