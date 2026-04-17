@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList, Cell,
@@ -126,6 +126,11 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
   const defaultFamily = products[0]?.family ?? null
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
   const [drawerGap, setDrawerGap] = useState<GapItem | null>(null)
+  const [drawerPage, setDrawerPage] = useState(0)
+  const DRAWER_PAGE_SIZE = 8
+
+  // Reset to page 0 whenever a new gap is opened
+  useEffect(() => { setDrawerPage(0) }, [drawerGap?.clause, drawerGap?.family])
 
   const displayFamily = selectedFamily ?? defaultFamily
 
@@ -478,32 +483,71 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
                 </button>
               </div>
 
-              {/* Report list */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                {drawerGap.reports.map(r => (
-                  <Link
-                    key={r.reportId}
-                    href={`/projects/${r.projectId}/reports/${r.reportId}`}
-                    onClick={() => setDrawerGap(null)}
-                  >
-                    <motion.div
-                      whileHover={{ x: 3 }}
-                      className="flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
-                      style={{ background: 'var(--surface-2)', borderColor: 'var(--border-subtle)' }}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                          {r.projectName}
-                        </p>
-                        <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                          {r.title} · {formatRelativeTime(r.createdAt)}
-                        </p>
+              {/* Report list — paginated, no scroll */}
+              {(() => {
+                const totalPages = Math.ceil(drawerGap.reports.length / DRAWER_PAGE_SIZE)
+                const pageReports = drawerGap.reports.slice(
+                  drawerPage * DRAWER_PAGE_SIZE,
+                  (drawerPage + 1) * DRAWER_PAGE_SIZE
+                )
+                return (
+                  <>
+                    <div className="flex-1 p-4 space-y-2">
+                      {pageReports.map(r => (
+                        <Link
+                          key={r.reportId}
+                          href={`/projects/${r.projectId}/reports/${r.reportId}`}
+                          onClick={() => setDrawerGap(null)}
+                        >
+                          <motion.div
+                            whileHover={{ x: 3 }}
+                            className="flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer"
+                            style={{ background: 'var(--surface-2)', borderColor: 'var(--border-subtle)' }}
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                {r.projectName}
+                              </p>
+                              <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                {r.title} · {formatRelativeTime(r.createdAt)}
+                              </p>
+                            </div>
+                            <ExternalLink size={13} className="shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                          </motion.div>
+                        </Link>
+                      ))}
+                    </div>
+
+                    {/* Pagination footer */}
+                    {totalPages > 1 && (
+                      <div
+                        className="shrink-0 flex items-center justify-between px-5 py-3 border-t"
+                        style={{ borderColor: 'var(--border-default)' }}
+                      >
+                        <button
+                          onClick={() => setDrawerPage(p => p - 1)}
+                          disabled={drawerPage === 0}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
+                          style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+                        >
+                          ← Prev
+                        </button>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          Page {drawerPage + 1} of {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setDrawerPage(p => p + 1)}
+                          disabled={drawerPage >= totalPages - 1}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-30"
+                          style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+                        >
+                          Next →
+                        </button>
                       </div>
-                      <ExternalLink size={13} className="shrink-0" style={{ color: 'var(--brand-primary)' }} />
-                    </motion.div>
-                  </Link>
-                ))}
-              </div>
+                    )}
+                  </>
+                )
+              })()}
             </motion.div>
           </>
         )}
