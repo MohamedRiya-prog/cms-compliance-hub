@@ -63,6 +63,7 @@ interface Props {
   products: ProductStat[]
   gaps: GapItem[]
   users: UserStat[]
+  dailyCounts: Record<string, number>
 }
 
 // ── Bar colours ──────────────────────────────────────────────────────────────
@@ -108,6 +109,175 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<
   )
 }
 
+// ── Calendar heat colours ────────────────────────────────────────────────────
+
+function heatColor(count: number): string {
+  if (count === 0) return 'var(--surface-2)'
+  if (count <= 2) return 'oklch(0.80 0.10 250)'
+  if (count <= 5) return 'oklch(0.60 0.18 250)'
+  return 'oklch(0.42 0.22 250)'
+}
+
+// ── Year calendar component (GitHub contribution style) ──────────────────────
+
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+const CELL = 11   // px — cell width & height
+const GAP  = 3    // px — gap between cells
+
+function YearCalendar({ dailyCounts }: { dailyCounts: Record<string, number> }) {
+  const now   = new Date()
+  const year  = now.getFullYear()
+  const todayKey = `${year}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+
+  // Build a flat list of every day in the year, pre-padded so col 0 row 0 = Monday
+  type DayCell = { key: string; date: Date } | null
+  const jan1Dow    = new Date(year, 0, 1).getDay()          // 0=Sun
+  const startPad   = (jan1Dow + 6) % 7                       // shift to Mon-first
+  const totalDays  = new Date(year, 1, 29).getMonth() === 1 ? 366 : 365
+
+  const flat: DayCell[] = Array(startPad).fill(null)
+  for (let i = 0; i < totalDays; i++) {
+    const d   = new Date(year, 0, i + 1)
+    const key = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    flat.push({ key, date: d })
+  }
+  while (flat.length % 7 !== 0) flat.push(null)
+
+  // Slice into week columns (each 7 days = rows Mon→Sun)
+  const weeks: DayCell[][] = []
+  for (let w = 0; w < flat.length / 7; w++) {
+    weeks.push(flat.slice(w * 7, w * 7 + 7))
+  }
+
+  // Month label positions — first week where a new month appears
+  const monthLabels: { label: string; col: number }[] = []
+  let lastMonth = -1
+  weeks.forEach((week, wi) => {
+    for (const cell of week) {
+      if (cell && cell.date.getMonth() !== lastMonth) {
+        lastMonth = cell.date.getMonth()
+        monthLabels.push({ label: MONTH_NAMES[lastMonth], col: wi })
+        break
+      }
+    }
+  })
+
+  const rowLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const LABEL_W  = 26   // px for day-label column
+  const MONTH_H  = 16   // px for month label row
+
+  return (
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
+        <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+          Generation Activity
+          <span className="ml-2 font-normal text-xs" style={{ color: 'var(--text-muted)' }}>
+            {year}
+          </span>
+        </h2>
+        <div className="flex items-center gap-1 text-[11px] shrink-0" style={{ color: 'var(--text-muted)' }}>
+          <span>Less</span>
+          {[0, 1, 3, 6].map((n, i) => (
+            <div
+              key={i}
+              style={{ width: CELL, height: CELL, borderRadius: 2, background: heatColor(n), border: '1px solid oklch(0 0 0 / 0.10)', flexShrink: 0 }}
+            />
+          ))}
+          <span>More</span>
+        </div>
+      </div>
+
+      {/* Scrollable wrapper (needed on narrow screens) */}
+      <div style={{ overflowX: 'auto', overflowY: 'hidden' }}>
+        <div style={{ display: 'inline-flex', alignItems: 'flex-start', gap: 0 }}>
+
+          {/* Day-of-week label column */}
+          <div style={{ paddingTop: MONTH_H, marginRight: 4, flexShrink: 0 }}>
+            {rowLabels.map((lbl, i) => (
+              <div
+                key={i}
+                style={{
+                  height: CELL,
+                  width: LABEL_W,
+                  marginBottom: i < 6 ? GAP : 0,
+                  fontSize: 9,
+                  lineHeight: `${CELL}px`,
+                  textAlign: 'right',
+                  color: 'var(--text-muted)',
+                  userSelect: 'none',
+                }}
+              >
+                {lbl}
+              </div>
+            ))}
+          </div>
+
+          {/* Grid area */}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+
+            {/* Month labels row */}
+            <div style={{ height: MONTH_H, position: 'relative' }}>
+              {monthLabels.map(({ label, col }) => (
+                <span
+                  key={label}
+                  style={{
+                    position: 'absolute',
+                    left: col * (CELL + GAP),
+                    fontSize: 10,
+                    lineHeight: `${MONTH_H}px`,
+                    color: 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                    userSelect: 'none',
+                  }}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+
+            {/* Week columns */}
+            <div style={{ display: 'flex', gap: GAP }}>
+              {weeks.map((week, wi) => (
+                <div key={wi} style={{ display: 'flex', flexDirection: 'column', gap: GAP, flexShrink: 0 }}>
+                  {week.map((cell, di) => {
+                    if (!cell) {
+                      return <div key={di} style={{ width: CELL, height: CELL }} />
+                    }
+                    const count   = dailyCounts[cell.key] ?? 0
+                    const isToday = cell.key === todayKey
+                    return (
+                      <div
+                        key={di}
+                        style={{
+                          width: CELL,
+                          height: CELL,
+                          borderRadius: 2,
+                          background: heatColor(count),
+                          border: isToday
+                            ? '1.5px solid var(--brand-primary)'
+                            : '1px solid oklch(0 0 0 / 0.07)',
+                          flexShrink: 0,
+                        }}
+                        title={
+                          count > 0
+                            ? `${count} report${count !== 1 ? 's' : ''} — ${cell.key}`
+                            : cell.key
+                        }
+                      />
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Animation variants ───────────────────────────────────────────────────────
 
 const sectionVariants = {
@@ -121,7 +291,7 @@ const sectionVariants = {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnalyticsClient({ overview, products, gaps, users }: Props) {
+export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }: Props) {
   // Default to the 3 lowest-rate families
   const defaultFamily = products[0]?.family ?? null
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
@@ -218,9 +388,21 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
         })}
       </motion.div>
 
-      {/* ── Section 2: Product compliance chart ─────────────────────────── */}
+      {/* ── Section 2: Monthly generation heatmap ───────────────────────── */}
       <motion.div
         custom={1}
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
+        className="rounded-xl p-5 border mb-6"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
+      >
+        <YearCalendar dailyCounts={dailyCounts} />
+      </motion.div>
+
+      {/* ── Section 3: Product compliance chart ─────────────────────────── */}
+      <motion.div
+        custom={2}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
@@ -281,10 +463,10 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
         )}
       </motion.div>
 
-      {/* ── Section 3: Gap analysis ──────────────────────────────────────── */}
+      {/* ── Section 4: Gap analysis ──────────────────────────────────────── */}
       {displayFamily && (
         <motion.div
-          custom={2}
+          custom={3}
           initial="hidden"
           animate="visible"
           variants={sectionVariants}
@@ -378,9 +560,9 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
         </motion.div>
       )}
 
-      {/* ── Section 4: User activity table ──────────────────────────────── */}
+      {/* ── Section 5: User activity table ──────────────────────────────── */}
       <motion.div
-        custom={3}
+        custom={4}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}

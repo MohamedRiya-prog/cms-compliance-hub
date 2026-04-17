@@ -77,6 +77,18 @@ export default async function AdminAnalyticsPage() {
 
   const profileMap = new Map(profilesArr.map(p => [p.id, p]))
 
+  // ── Daily generation counts (current year) ──────────────────────────────────
+  const now = new Date()
+  const year = now.getFullYear()
+  const dailyCounts: Record<string, number> = {}
+  for (const r of reportsArr) {
+    const d = new Date(r.created_at)
+    if (d.getFullYear() === year) {
+      const key = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      dailyCounts[key] = (dailyCounts[key] ?? 0) + 1
+    }
+  }
+
   // ── Overview ────────────────────────────────────────────────────────────────
   const totalReports = reportsArr.length
   const totalClauses = reportsArr.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
@@ -235,6 +247,7 @@ export default async function AdminAnalyticsPage() {
       products={products}
       gaps={gaps}
       users={users}
+      dailyCounts={dailyCounts}
     />
   )
 }

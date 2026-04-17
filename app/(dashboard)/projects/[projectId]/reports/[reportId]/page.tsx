@@ -37,6 +37,7 @@ export default async function ReportPage({
     summary: Record<string, number> | null
     spec_text: string | null
     spec_document_id: string | null
+    revision: number
     created_at: string
     updated_at: string
     generation_metadata: Record<string, unknown> | null
@@ -64,6 +65,7 @@ export default async function ReportPage({
         summary: typedReport.summary,
         specText: typedReport.spec_text,
         specDocumentId: typedReport.spec_document_id ?? null,
+        revision: typedReport.revision ?? 0,
         createdAt: typedReport.created_at,
         updatedAt: typedReport.updated_at,
         generationMetadata: typedReport.generation_metadata,

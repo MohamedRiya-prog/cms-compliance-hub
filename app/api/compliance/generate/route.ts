@@ -53,6 +53,17 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Compute next revision number for this project + product_family
+  const { data: latestRevision } = await supabase
+    .from('compliance_reports')
+    .select('revision')
+    .eq('project_id', projectId)
+    .eq('product_family', productFamily)
+    .order('revision', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const nextRevision = latestRevision ? ((latestRevision as { revision: number }).revision + 1) : 0
+
   // Build system prompt
   const systemPrompt = await buildSystemPrompt(productFamily)
   const [rules, products, examples] = await Promise.all([
@@ -71,6 +82,7 @@ export async function POST(req: NextRequest) {
       title,
       product_family: productFamily,
       status: 'generating',
+      revision: nextRevision,
       spec_text: specText.slice(0, 50000),
       prompt_version: JSON.stringify(promptVersion),
       generation_metadata: { content_hash: contentHash, model: 'claude-opus-4-6', started_at: new Date().toISOString() },

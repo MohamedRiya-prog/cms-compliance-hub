@@ -46,13 +46,28 @@ export async function POST(
   const rows = [...(typedReport.compliance_rows ?? [])].sort((a, b) => a.sort_order - b.sort_order)
   const systemPrompt = await buildChatSystemPrompt(typedReport.product_family)
 
-  // Fetch chat history
+  // Enforce message limit — counts USER messages only, across all sessions for this report
+  const MAX_USER_MESSAGES = 20
+  const { count: userMsgCount } = await db
+    .from('chat_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('report_id', reportId)
+    .eq('role', 'user')
+
+  if ((userMsgCount ?? 0) >= MAX_USER_MESSAGES) {
+    return new Response(
+      JSON.stringify({ error: 'limit_reached', limit: MAX_USER_MESSAGES }),
+      { status: 429, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
+  // Fetch chat history from DB (persists across refreshes — limit cannot be bypassed)
   const { data: history } = await db
     .from('chat_messages')
     .select('role, content')
     .eq('report_id', reportId)
     .order('created_at', { ascending: true })
-    .limit(20)
+    .limit(MAX_USER_MESSAGES * 2)
 
   const referencedRow = referencedRowId ? rows.find(r => r.id === referencedRowId) : null
 

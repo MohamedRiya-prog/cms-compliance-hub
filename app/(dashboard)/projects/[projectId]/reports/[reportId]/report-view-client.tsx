@@ -31,6 +31,7 @@ interface Report {
   summary: Record<string, number> | null
   specText: string | null
   specDocumentId: string | null
+  revision: number
   createdAt: string
   updatedAt: string
   generationMetadata: Record<string, unknown> | null
@@ -125,6 +126,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
   const [chatLoading, setChatLoading] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
   const [redoAllLoading, setRedoAllLoading] = useState(false)
+  const [revisionDialogOpen, setRevisionDialogOpen] = useState(false)
   const [reportSummary, setReportSummary] = useState(report.summary)
   const [reportStatus, setReportStatus] = useState(report.status)
   const [exporting, setExporting] = useState(false)
@@ -259,8 +261,16 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
     })
 
     if (!res.ok) {
-      const errText = await res.text()
-      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'Error: ' + errText }])
+      if (res.status === 429) {
+        setChatMessages(prev => [...prev, {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: '⚠️ Message limit reached for this report. Please contact your admin or generate a new revision to continue.',
+        }])
+      } else {
+        const errText = await res.text()
+        setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'assistant', content: 'Error: ' + errText }])
+      }
       setChatLoading(false)
       return
     }
@@ -328,7 +338,12 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
     setChatLoading(false)
   }
 
-  async function handleRedoAll() {
+  function handleRedoAll() {
+    setRevisionDialogOpen(true)
+  }
+
+  async function executeRegen(createRevision: boolean) {
+    setRevisionDialogOpen(false)
     setRedoAllLoading(true)
     const instructions = chatInput.trim() || undefined
     if (instructions) {
@@ -338,10 +353,14 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
     const res = await fetch(`/api/compliance/${report.id}/regen`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ instructions }),
+      body: JSON.stringify({ instructions, createRevision }),
     })
     const data = await res.json()
     if (res.ok) {
+      if (data.newReportId) {
+        router.push(`/projects/${project.id}/reports/${data.newReportId}`)
+        return
+      }
       setRows(data.rows)
       setReportSummary(data.summary)
       setChatMessages(prev => [...prev, {
@@ -365,6 +384,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
     : 0
 
   return (
+    <>
     <div className="flex flex-col h-screen overflow-hidden">
       {/* Header */}
       <div
@@ -968,5 +988,79 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
         )}
       </div>
     </div>
+    {/* ── Revision dialog ─────────────────────────────────────────────── */}
+    <AnimatePresence>
+      {revisionDialogOpen && (
+        <>
+          <motion.div
+            className="fixed inset-0 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ background: 'oklch(0 0 0 / 0.45)' }}
+            onClick={() => setRevisionDialogOpen(false)}
+          />
+          <motion.div
+            className="fixed z-50 inset-0 flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl p-6"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                Regenerate with AI
+              </h2>
+              <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>
+                Choose how to save the regenerated output.
+              </p>
+
+              <div className="space-y-3">
+                {/* Update in place */}
+                <button
+                  onClick={() => executeRegen(false)}
+                  className="w-full text-left px-4 py-3.5 rounded-xl border transition-all hover:border-[var(--brand-primary)]"
+                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border-default)' }}
+                >
+                  <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+                    Update {`Revision-${String(report.revision).padStart(2, '0')}`}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Replaces current rows in-place. Existing revision is overwritten.
+                  </p>
+                </button>
+
+                {/* New revision */}
+                <button
+                  onClick={() => executeRegen(true)}
+                  className="w-full text-left px-4 py-3.5 rounded-xl border transition-all hover:border-[var(--brand-primary)]"
+                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border-default)' }}
+                >
+                  <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--brand-primary)' }}>
+                    Create {`Revision-${String(report.revision + 1).padStart(2, '0')}`}
+                  </p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Keeps current revision and generates a new one alongside it.
+                  </p>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setRevisionDialogOpen(false)}
+                className="mt-4 w-full py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--surface-3)]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+    </>
   )
 }

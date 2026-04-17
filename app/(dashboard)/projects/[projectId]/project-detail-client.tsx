@@ -30,7 +30,12 @@ interface Report {
   created_at: string
   updated_at: string
   spec_document_id: string | null
+  revision: number
   compliance_rows: ComplianceRow[]
+}
+
+function revLabel(n: number): string {
+  return `Revision-${String(n ?? 0).padStart(2, '0')}`
 }
 
 interface SpecDoc {
@@ -99,24 +104,43 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
 
   const hasReports = project.compliance_reports.length > 0
 
-  // Sort reports by created_at so the preview order is consistent
+  // Sort all reports oldest-first so revision order is stable
   const sortedReports = [...project.compliance_reports].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   )
 
-  // Group reports by their source spec document (null = pasted text / no document)
+  // Spec-doc map for name lookup + preview
   const docMap = new Map<string, SpecDoc>(project.spec_documents.map(d => [d.id, d]))
+
+  // Outer group: spec_document_id (null = pasted text)
   const reportsByDoc = sortedReports.reduce<Map<string | null, Report[]>>((acc, r) => {
     const key = r.spec_document_id ?? null
     if (!acc.has(key)) acc.set(key, [])
     acc.get(key)!.push(r)
     return acc
   }, new Map())
-  // Order: documents first (in upload order), then null group
+  // Order: uploaded docs in upload order, then null group
   const groupOrder: Array<string | null> = [
     ...project.spec_documents.map(d => d.id).filter(id => reportsByDoc.has(id)),
     ...(reportsByDoc.has(null) ? [null] : []),
   ]
+
+  // Inner group helper: given a flat list of reports for one doc,
+  // bucket by product_family and sort each bucket by revision ascending
+  function groupByFamily(reports: Report[]): [string, Report[]][] {
+    const map = new Map<string, Report[]>()
+    for (const r of reports) {
+      if (!map.has(r.product_family)) map.set(r.product_family, [])
+      map.get(r.product_family)!.push(r)
+    }
+    for (const revs of map.values()) revs.sort((a, b) => (a.revision ?? 0) - (b.revision ?? 0))
+    return Array.from(map.entries())
+  }
+
+  // Flat family order still needed for export-preview header count
+  const familyOrder = Array.from(
+    new Set(sortedReports.map(r => r.product_family))
+  )
 
   async function handleDelete() {
     if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return
@@ -380,7 +404,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
         <Panel defaultSize={28} minSize={18} maxSize={44}>
           <div className="h-full overflow-y-auto py-4 px-3 space-y-5" style={{ background: 'var(--surface-1)' }}>
 
-            {/* Reports grouped by source document */}
+            {/* Reports grouped by product family → revisions */}
             <div>
               <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-3" style={{ color: 'var(--text-muted)' }}>
                 Reports ({project.compliance_reports.length})
@@ -398,14 +422,15 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
               ) : (
                 <div className="space-y-4">
                   {groupOrder.map(docId => {
-                    const reports = reportsByDoc.get(docId) ?? []
-                    const doc     = docId ? docMap.get(docId) : null
-                    const isActive  = docPreview?.id === docId
-                    const isLoading = docLoading === docId
+                    const docReports = reportsByDoc.get(docId) ?? []
+                    const doc        = docId ? docMap.get(docId) : null
+                    const isActive   = docPreview?.id === docId
+                    const isLoading  = docLoading === docId
+                    const families   = groupByFamily(docReports)
 
                     return (
                       <div key={docId ?? '__ungrouped__'}>
-                        {/* Document header — clickable to preview */}
+                        {/* Spec-doc header — clickable to preview */}
                         <button
                           onClick={() => docId ? handleDocClick(docId) : undefined}
                           disabled={!docId}
@@ -425,60 +450,75 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                           <span className="text-xs font-medium truncate flex-1" style={{ color: isActive ? 'var(--brand-primary)' : 'var(--text-secondary)' }}>
                             {doc ? doc.file_name : 'Pasted text'}
                           </span>
-                          {doc && (
-                            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
-                              {doc.file_type.toUpperCase()}
-                            </span>
-                          )}
+                          {doc && <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>{doc.file_type.toUpperCase()}</span>}
                         </button>
 
-                        {/* Reports under this document */}
-                        <div className="space-y-0.5 pl-3 border-l ml-3.5" style={{ borderColor: 'var(--border-subtle)' }}>
-                          {reports.map(report => {
-                            const total  = report.summary?.total ?? report.compliance_rows.length
-                            const comply = report.summary?.comply ?? 0
-                            const rate   = total > 0 ? Math.round((comply / total) * 100) : null
-
+                        {/* Product families → revisions */}
+                        <div className="space-y-2 pl-3 border-l ml-3.5" style={{ borderColor: 'var(--border-subtle)' }}>
+                          {families.map(([family, revisions]) => {
+                            const latest = revisions[revisions.length - 1]
                             return (
-                              <div key={report.id} className="group relative flex items-center rounded-lg"
-                                style={{ background: 'transparent' }}
-                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                              >
-                                <Link href={`/projects/${project.id}/reports/${report.id}`} className="flex-1 min-w-0">
-                                  <motion.div whileHover={{ x: 2 }} className="flex items-center gap-2 px-2 py-2 cursor-pointer">
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 mb-0.5">
-                                        <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                                          {report.product_family}
-                                        </p>
-                                        <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
-                                          · {report.status}
-                                        </span>
+                              <div key={family}>
+                                {/* Family label */}
+                                <p className="text-[10px] font-semibold uppercase tracking-wider px-2 pt-1 pb-0.5" style={{ color: 'var(--text-muted)' }}>
+                                  {family}
+                                </p>
+                                {/* Revision rows */}
+                                <div className="space-y-0.5">
+                                  {revisions.map(report => {
+                                    const total   = report.summary?.total ?? report.compliance_rows.length
+                                    const comply  = report.summary?.comply ?? 0
+                                    const rate    = total > 0 ? Math.round((comply / total) * 100) : null
+                                    const isLatest = report.id === latest.id
+                                    return (
+                                      <div key={report.id} className="group relative flex items-center rounded-lg"
+                                        style={{ background: 'transparent' }}
+                                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                                      >
+                                        <Link href={`/projects/${project.id}/reports/${report.id}`} className="flex-1 min-w-0">
+                                          <motion.div whileHover={{ x: 2 }} className="flex items-center gap-2 px-2 py-1.5 cursor-pointer">
+                                            <div className="flex-1 min-w-0">
+                                              <div className="flex items-center gap-1.5">
+                                                <p className="text-xs font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
+                                                  {revLabel(report.revision ?? 0)}
+                                                </p>
+                                                {isLatest && revisions.length > 1 && (
+                                                  <span className="text-[9px] px-1.5 py-px rounded-full font-medium shrink-0" style={{ background: 'oklch(0.65 0.18 270 / 0.12)', color: 'var(--brand-primary)' }}>
+                                                    latest
+                                                  </span>
+                                                )}
+                                                <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
+                                                  · {report.status}
+                                                </span>
+                                              </div>
+                                              <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                                {total} clauses · {formatRelativeTime(report.updated_at)}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              {rate !== null && (
+                                                <span className="text-xs font-bold" style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
+                                                  {rate}%
+                                                </span>
+                                              )}
+                                              <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
+                                            </div>
+                                          </motion.div>
+                                        </Link>
+                                        <button
+                                          onClick={e => { e.stopPropagation(); handleDeleteReport(report.id, `${family} ${revLabel(report.revision ?? 0)}`) }}
+                                          disabled={deletingReportId === report.id}
+                                          className="opacity-0 group-hover:opacity-100 shrink-0 p-1.5 mr-1 rounded transition-all hover:bg-[var(--surface-3)]"
+                                          style={{ color: 'var(--status-not-comply)' }}
+                                          title="Delete report"
+                                        >
+                                          {deletingReportId === report.id ? <Loader size={11} className="animate-spin" /> : <X size={11} />}
+                                        </button>
                                       </div>
-                                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                                        {total} clauses · {formatRelativeTime(report.updated_at)}
-                                      </p>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0">
-                                      {rate !== null && (
-                                        <span className="text-xs font-bold" style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
-                                          {rate}%
-                                        </span>
-                                      )}
-                                      <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
-                                    </div>
-                                  </motion.div>
-                                </Link>
-                                <button
-                                  onClick={e => { e.stopPropagation(); handleDeleteReport(report.id, report.product_family) }}
-                                  disabled={deletingReportId === report.id}
-                                  className="opacity-0 group-hover:opacity-100 shrink-0 p-1.5 mr-1 rounded transition-all hover:bg-[var(--surface-3)]"
-                                  style={{ color: 'var(--status-not-comply)' }}
-                                  title="Delete report"
-                                >
-                                  {deletingReportId === report.id ? <Loader size={11} className="animate-spin" /> : <X size={11} />}
-                                </button>
+                                    )
+                                  })}
+                                </div>
                               </div>
                             )
                           })}
@@ -487,7 +527,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                     )
                   })}
 
-                  {/* Documents with no reports yet */}
+                  {/* Spec docs that have no reports yet */}
                   {project.spec_documents
                     .filter(d => !reportsByDoc.has(d.id))
                     .map(doc => {
@@ -559,7 +599,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                 <>
                   <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Export Preview</span>
                   <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {sortedReports.reduce((n, r) => n + r.compliance_rows.length, 0)} total clauses across {sortedReports.length} report{sortedReports.length !== 1 ? 's' : ''}
+                    {familyOrder.length} famil{familyOrder.length !== 1 ? 'ies' : 'y'} · latest revisions only
                   </span>
                 </>
               )}
@@ -643,13 +683,13 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
 
                   <tbody>
                     {groupOrder.map(docId => {
-                      const reports = reportsByDoc.get(docId) ?? []
-                      const doc     = docId ? docMap.get(docId) : null
-                      const docLabel = doc ? doc.file_name : 'Pasted text'
-
+                      const docReports = reportsByDoc.get(docId) ?? []
+                      const doc        = docId ? docMap.get(docId) : null
+                      const docLabel   = doc ? doc.file_name : 'Pasted text'
+                      const families   = groupByFamily(docReports)
                       return (
                         <>
-                          {/* Document divider row */}
+                          {/* Spec-doc divider */}
                           <tr key={`doc-${docId ?? 'ungrouped'}`}>
                             <td
                               colSpan={5}
@@ -669,21 +709,21 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                                 <FileText size={10} />
                                 {docLabel}
                                 <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
-                                  — {reports.reduce((n, r) => n + r.compliance_rows.length, 0)} clauses across {reports.length} report{reports.length !== 1 ? 's' : ''}
+                                  — {docReports.reduce((n, r) => n + r.compliance_rows.length, 0)} clauses
                                 </span>
                               </div>
                             </td>
                           </tr>
 
-                          {reports.map(report => {
-                            const rows = [...report.compliance_rows].sort((a, b) => a.sort_order - b.sort_order)
+                          {families.map(([, revisions]) => revisions.slice(-1).map(report => {
+                            const rows   = [...report.compliance_rows].sort((a, b) => a.sort_order - b.sort_order)
                             const total  = report.summary?.total ?? rows.length
                             const comply = report.summary?.comply ?? 0
                             const rate   = total > 0 ? Math.round((comply / total) * 100) : null
 
                             return (
                               <>
-                                {/* Product section header */}
+                                {/* Revision subheader */}
                                 <tr key={`hdr-${report.id}`}>
                                   <td
                                     colSpan={5}
@@ -697,7 +737,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                                     }}
                                   >
                                     <div className="flex items-center justify-between">
-                                      <span>{report.title}</span>
+                                      <span>{revLabel(report.revision ?? 0)} — {report.title}</span>
                                       <div className="flex items-center gap-3 font-normal text-xs" style={{ color: 'var(--text-muted)' }}>
                                         <span>{total} clauses</span>
                                         {rate !== null && (
@@ -746,7 +786,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                                 })}
                               </>
                             )
-                          })}
+                          }))}
                         </>
                       )
                     })}

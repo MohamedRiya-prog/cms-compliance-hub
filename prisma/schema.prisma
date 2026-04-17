@@ -76,6 +76,7 @@ model ComplianceReport {
   promptVersion      String?  @map("prompt_version")
   generationMetadata Json?    @map("generation_metadata")
   specText           String?  @map("spec_text")
+  revision           Int      @default(0)
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz()
   updatedAt          DateTime @updatedAt @map("updated_at") @db.Timestamptz()
 

@@ -130,15 +130,24 @@ async function exportProject(req: NextRequest, projectId: string) {
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-  const { data: reports } = await supabase
+  const { data: allReports } = await supabase
     .from('compliance_reports')
-    .select(`id, title, product_family, summary, compliance_rows(*)`)
+    .select(`id, title, product_family, revision, summary, compliance_rows(*)`)
     .eq('project_id', projectId)
-    .order('created_at', { ascending: true })
+    .not('status', 'in', '("generating","error")')
+    .order('revision', { ascending: true })
 
-  if (!reports || reports.length === 0) {
+  if (!allReports || allReports.length === 0) {
     return NextResponse.json({ error: 'No reports found' }, { status: 404 })
   }
+
+  // Keep only the latest revision per product_family
+  const latestMap = new Map<string, typeof allReports[number]>()
+  for (const r of allReports) {
+    const key = (r as { product_family: string }).product_family
+    latestMap.set(key, r)  // later (higher revision) entries overwrite earlier ones
+  }
+  const reports = Array.from(latestMap.values())
 
   const workbook = new ExcelJS.Workbook()
   workbook.creator = 'CMS Compliance Hub'
@@ -228,11 +237,11 @@ async function exportProject(req: NextRequest, projectId: string) {
 
   summarySheet.views = [{ state: 'frozen', ySplit: 3 }]
 
-  // ── One sheet per report ─────────────────────────────────────────────────
+  // ── One sheet per report (latest revision only) ──────────────────────────
   const usedNames = new Set<string>()
-  for (const report of reports as unknown as ReportWithRows[]) {
-    // Excel sheet names: max 31 chars, unique
-    let name = (report.product_family || report.title).slice(0, 28)
+  for (const report of reports as unknown as (ReportWithRows & { revision?: number })[]) {
+    const rev = `R${String(report.revision ?? 0).padStart(2, '0')}`
+    let name = `${(report.product_family || report.title).slice(0, 24)} ${rev}`
     if (usedNames.has(name)) name = `${name.slice(0, 25)}_${usedNames.size}`
     usedNames.add(name)
     addReportSheet(workbook, report, name)
