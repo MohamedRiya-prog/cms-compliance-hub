@@ -28,8 +28,15 @@ export default async function AdminAnalyticsPage() {
   // Fetch failing rows for gap analysis
   const { data: failingRows } = await db
     .from('compliance_rows')
-    .select('status, requirement, clause, compliance_reports!inner(id, product_family, project_id)')
+    .select('status, requirement, clause, compliance_reports!inner(id, title, product_family, project_id, created_at)')
     .in('status', ['not_comply', 'noted'])
+
+  // Fetch all projects for name lookup
+  const { data: projects } = await db
+    .from('projects')
+    .select('id, name')
+
+  const projectNameMap = new Map((projects ?? []).map((p: { id: string; name: string }) => [p.id, p.name]))
 
   // Fetch all profiles (no email column — get that from auth)
   const { data: profiles } = await db
@@ -51,7 +58,7 @@ export default async function AdminAnalyticsPage() {
     status: string
     requirement: string
     clause: string
-    compliance_reports: { id: string; product_family: string; project_id: string }
+    compliance_reports: { id: string; title: string; product_family: string; project_id: string; created_at: string }
   }
   type ProfileRow = {
     id: string
@@ -121,14 +128,14 @@ export default async function AdminAnalyticsPage() {
     .sort((a, b) => a.complianceRate - b.complianceRate)
 
   // ── Gaps ────────────────────────────────────────────────────────────────────
+  type GapReport = { reportId: string; projectId: string; projectName: string; title: string; createdAt: string }
+
   const gapMap = new Map<string, {
     family: string
     requirement: string
     clause: string
-    count: number
     type: string
-    reportId: string
-    projectId: string
+    reports: GapReport[]
   }>()
 
   for (const row of rowsArr) {
@@ -140,22 +147,38 @@ export default async function AdminAnalyticsPage() {
         family: fam,
         requirement: row.requirement ?? '',
         clause: row.clause ?? '',
-        count: 0,
         type: row.status,
-        reportId: row.compliance_reports.id,
-        projectId: row.compliance_reports.project_id,
+        reports: [],
       })
     }
-    gapMap.get(key)!.count++
+    const entry = gapMap.get(key)!
+    // Only add each report once
+    if (!entry.reports.find(r => r.reportId === row.compliance_reports.id)) {
+      entry.reports.push({
+        reportId: row.compliance_reports.id,
+        projectId: row.compliance_reports.project_id,
+        projectName: projectNameMap.get(row.compliance_reports.project_id) ?? 'Unknown Project',
+        title: row.compliance_reports.title,
+        createdAt: row.compliance_reports.created_at,
+      })
+    }
   }
 
-  const gapsByFamily = new Map<string, Array<{ family: string; requirement: string; clause: string; count: number; type: string; reportId: string; projectId: string }>>()
-  for (const gap of gapMap.values()) {
-    if (!gapsByFamily.has(gap.family)) gapsByFamily.set(gap.family, [])
-    gapsByFamily.get(gap.family)!.push(gap)
+  const gapsByFamily = new Map<string, typeof gaps>()
+  const gaps: Array<{
+    family: string; requirement: string; clause: string; type: string
+    count: number; reports: GapReport[]
+  }> = []
+
+  for (const entry of gapMap.values()) {
+    // Sort reports newest first
+    entry.reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    const gap = { ...entry, count: entry.reports.length }
+    if (!gapsByFamily.has(entry.family)) gapsByFamily.set(entry.family, [])
+    gapsByFamily.get(entry.family)!.push(gap)
   }
 
-  const gaps: Array<{ family: string; requirement: string; clause: string; count: number; type: string; reportId: string; projectId: string }> = []
+  gaps.length = 0
   for (const [, familyGaps] of gapsByFamily) {
     const top5 = familyGaps.sort((a, b) => b.count - a.count).slice(0, 5)
     gaps.push(...top5)

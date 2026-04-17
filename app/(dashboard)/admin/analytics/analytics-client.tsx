@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList, Cell,
 } from 'recharts'
@@ -30,14 +30,21 @@ interface ProductStat {
   lastActivity: string
 }
 
+interface GapReport {
+  reportId: string
+  projectId: string
+  projectName: string
+  title: string
+  createdAt: string
+}
+
 interface GapItem {
   family: string
   requirement: string
   clause: string
   count: number
   type: string
-  reportId: string
-  projectId: string
+  reports: GapReport[]
 }
 
 interface UserStat {
@@ -118,6 +125,7 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
   // Default to the 3 lowest-rate families
   const defaultFamily = products[0]?.family ?? null
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
+  const [drawerGap, setDrawerGap] = useState<GapItem | null>(null)
 
   const displayFamily = selectedFamily ?? defaultFamily
 
@@ -306,7 +314,7 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
               <table className="w-full text-xs">
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                    {['Clause', 'Requirement', 'Occurrences', 'Type', ''].map(h => (
+                    {['Clause', 'Requirement', 'Occurrences', 'Type'].map(h => (
                       <th
                         key={h}
                         className="text-left pb-2 pr-4 font-medium"
@@ -334,8 +342,15 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
                           {gap.requirement}
                         </span>
                       </td>
-                      <td className="py-2.5 pr-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
-                        {gap.count}
+                      <td className="py-2.5 pr-4">
+                        <button
+                          onClick={() => setDrawerGap(gap)}
+                          className="font-semibold underline decoration-dotted underline-offset-2 hover:opacity-70 transition-opacity"
+                          style={{ color: 'var(--brand-primary)' }}
+                          title="Click to see all reports"
+                        >
+                          {gap.count}
+                        </button>
                       </td>
                       <td className="py-2.5 pr-4">
                         <span
@@ -348,16 +363,6 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
                         >
                           {gap.type === 'not_comply' ? 'Not Comply' : 'Noted'}
                         </span>
-                      </td>
-                      <td className="py-2.5">
-                        <Link
-                          href={`/projects/${gap.projectId}/reports/${gap.reportId}`}
-                          className="flex items-center gap-1 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                          style={{ color: 'var(--brand-primary)' }}
-                          title="Open compliance report"
-                        >
-                          <ExternalLink size={11} /> Open
-                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -427,6 +432,82 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
           </div>
         )}
       </motion.div>
+
+      {/* ── Occurrences drawer ──────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {drawerGap && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              className="fixed inset-0 z-40"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              style={{ background: 'oklch(0 0 0 / 0.4)' }}
+              onClick={() => setDrawerGap(null)}
+            />
+
+            {/* Drawer panel */}
+            <motion.div
+              className="fixed top-0 right-0 bottom-0 z-50 flex flex-col w-full max-w-md"
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+              style={{ background: 'var(--surface-1)', borderLeft: '1px solid var(--border-default)' }}
+            >
+              {/* Drawer header */}
+              <div className="flex items-start justify-between gap-3 p-5 border-b shrink-0" style={{ borderColor: 'var(--border-default)' }}>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-muted)' }}>
+                    Failing clause · {drawerGap.count} report{drawerGap.count !== 1 ? 's' : ''}
+                  </p>
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {drawerGap.clause}
+                  </p>
+                  <p className="text-xs mt-1 line-clamp-3" style={{ color: 'var(--text-secondary)' }}>
+                    {drawerGap.requirement}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setDrawerGap(null)}
+                  className="shrink-0 p-1.5 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Report list */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                {drawerGap.reports.map(r => (
+                  <Link
+                    key={r.reportId}
+                    href={`/projects/${r.projectId}/reports/${r.reportId}`}
+                    onClick={() => setDrawerGap(null)}
+                  >
+                    <motion.div
+                      whileHover={{ x: 3 }}
+                      className="flex items-center justify-between gap-3 p-3 rounded-xl border cursor-pointer transition-colors"
+                      style={{ background: 'var(--surface-2)', borderColor: 'var(--border-subtle)' }}
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                          {r.projectName}
+                        </p>
+                        <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {r.title} · {formatRelativeTime(r.createdAt)}
+                        </p>
+                      </div>
+                      <ExternalLink size={13} className="shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                    </motion.div>
+                  </Link>
+                ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   )
 }
