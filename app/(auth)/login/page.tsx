@@ -65,13 +65,9 @@ export default function LoginPage() {
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: 0.1, duration: 0.4, ease: "easeOut" }}
-              className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4"
-              style={{ background: 'oklch(0.65 0.18 270 / 0.15)', border: '1px solid oklch(0.65 0.18 270 / 0.3)' }}
+              className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-4 overflow-hidden"
             >
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                <path d="M4 20L10 8L16 14L22 6" stroke="oklch(0.65 0.18 270)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                <circle cx="22" cy="6" r="2.5" fill="oklch(0.72 0.19 155)"/>
-              </svg>
+              <img src="/logo.png" alt="CMS Logo" className="w-full h-full object-contain" />
             </motion.div>
             <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
               CMS Compliance Hub
