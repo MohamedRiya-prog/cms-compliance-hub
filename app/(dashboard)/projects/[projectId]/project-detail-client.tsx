@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'framer-motion'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader } from 'lucide-react'
+import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader, X } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface ComplianceRow {
@@ -27,6 +27,7 @@ interface Report {
   summary: { total: number; comply: number; notComply: number; noted: number; notPartOfProposal: number } | null
   created_at: string
   updated_at: string
+  spec_document_id: string | null
   compliance_rows: ComplianceRow[]
 }
 
@@ -83,10 +84,15 @@ const reportStatusColor: Record<string, string> = {
   exported:   'var(--brand-primary)',
 }
 
+interface DocPreview { id: string; fileName: string; fileType: string; text: string }
+
 export function ProjectDetailClient({ project }: Props) {
   const router = useRouter()
   const [deleting,  setDeleting]  = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [deletingReportId, setDeletingReportId] = useState<string | null>(null)
+  const [docPreview,  setDocPreview]  = useState<DocPreview | null>(null)
+  const [docLoading,  setDocLoading]  = useState<string | null>(null)
 
   const hasReports = project.compliance_reports.length > 0
 
@@ -95,12 +101,50 @@ export function ProjectDetailClient({ project }: Props) {
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   )
 
+  // Group reports by their source spec document (null = pasted text / no document)
+  const docMap = new Map<string, SpecDoc>(project.spec_documents.map(d => [d.id, d]))
+  const reportsByDoc = sortedReports.reduce<Map<string | null, Report[]>>((acc, r) => {
+    const key = r.spec_document_id ?? null
+    if (!acc.has(key)) acc.set(key, [])
+    acc.get(key)!.push(r)
+    return acc
+  }, new Map())
+  // Order: documents first (in upload order), then null group
+  const groupOrder: Array<string | null> = [
+    ...project.spec_documents.map(d => d.id).filter(id => reportsByDoc.has(id)),
+    ...(reportsByDoc.has(null) ? [null] : []),
+  ]
+
   async function handleDelete() {
     if (!confirm(`Delete project "${project.name}"? This cannot be undone.`)) return
     setDeleting(true)
     await fetch(`/api/projects/${project.id}`, { method: 'DELETE' })
     router.push('/')
     router.refresh()
+  }
+
+  async function handleDeleteReport(reportId: string, reportTitle: string) {
+    if (!confirm(`Delete "${reportTitle}"? This cannot be undone.`)) return
+    setDeletingReportId(reportId)
+    const res = await fetch(`/api/compliance/${reportId}`, { method: 'DELETE' })
+    if (res.ok) {
+      router.refresh()
+    } else {
+      alert('Delete failed')
+      setDeletingReportId(null)
+    }
+  }
+
+  async function handleDocClick(docId: string) {
+    if (docPreview?.id === docId) { setDocPreview(null); return }
+    setDocLoading(docId)
+    try {
+      const res  = await fetch(`/api/documents/${docId}`)
+      const data = await res.json()
+      if (res.ok) setDocPreview(data)
+    } finally {
+      setDocLoading(null)
+    }
   }
 
   async function handleExportAll() {
@@ -186,9 +230,9 @@ export function ProjectDetailClient({ project }: Props) {
         <Panel defaultSize={28} minSize={18} maxSize={44}>
           <div className="h-full overflow-y-auto py-4 px-3 space-y-5" style={{ background: 'var(--surface-1)' }}>
 
-            {/* Reports */}
+            {/* Reports grouped by source document */}
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-2" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-3" style={{ color: 'var(--text-muted)' }}>
                 Reports ({project.compliance_reports.length})
               </p>
 
@@ -202,72 +246,130 @@ export function ProjectDetailClient({ project }: Props) {
                   </Link>
                 </div>
               ) : (
-                <div className="space-y-0.5">
-                  {sortedReports.map(report => {
-                    const total  = report.summary?.total ?? report.compliance_rows.length
-                    const comply = report.summary?.comply ?? 0
-                    const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+                <div className="space-y-4">
+                  {groupOrder.map(docId => {
+                    const reports = reportsByDoc.get(docId) ?? []
+                    const doc     = docId ? docMap.get(docId) : null
+                    const isActive  = docPreview?.id === docId
+                    const isLoading = docLoading === docId
 
                     return (
-                      <Link key={report.id} href={`/projects/${project.id}/reports/${report.id}`}>
-                        <motion.div
-                          whileHover={{ x: 2 }}
-                          className="flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer transition-all"
-                          style={{ background: 'transparent' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      <div key={docId ?? '__ungrouped__'}>
+                        {/* Document header — clickable to preview */}
+                        <button
+                          onClick={() => docId ? handleDocClick(docId) : undefined}
+                          disabled={!docId}
+                          className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg mb-1 text-left transition-all"
+                          style={{
+                            background: isActive ? 'oklch(0.65 0.18 270 / 0.10)' : 'transparent',
+                            border: isActive ? '1px solid oklch(0.65 0.18 270 / 0.25)' : '1px solid transparent',
+                            cursor: docId ? 'pointer' : 'default',
+                          }}
                         >
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                                {report.product_family}
-                              </p>
-                              <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
-                                · {report.status}
-                              </span>
-                            </div>
-                            <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                              {total} clauses · {formatRelativeTime(report.updated_at)}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {rate !== null && (
-                              <span
-                                className="text-xs font-bold"
-                                style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}
+                          {docId
+                            ? isLoading
+                              ? <Loader size={12} className="animate-spin shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                              : <FileText size={12} className="shrink-0" style={{ color: isActive ? 'var(--brand-primary)' : 'var(--text-muted)' }} />
+                            : <FileText size={12} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
+                          }
+                          <span className="text-xs font-medium truncate flex-1" style={{ color: isActive ? 'var(--brand-primary)' : 'var(--text-secondary)' }}>
+                            {doc ? doc.file_name : 'Pasted text'}
+                          </span>
+                          {doc && (
+                            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                              {doc.file_type.toUpperCase()}
+                            </span>
+                          )}
+                        </button>
+
+                        {/* Reports under this document */}
+                        <div className="space-y-0.5 pl-3 border-l ml-3.5" style={{ borderColor: 'var(--border-subtle)' }}>
+                          {reports.map(report => {
+                            const total  = report.summary?.total ?? report.compliance_rows.length
+                            const comply = report.summary?.comply ?? 0
+                            const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+
+                            return (
+                              <div key={report.id} className="group relative flex items-center rounded-lg"
+                                style={{ background: 'transparent' }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                               >
-                                {rate}%
-                              </span>
-                            )}
-                            <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
-                          </div>
-                        </motion.div>
-                      </Link>
+                                <Link href={`/projects/${project.id}/reports/${report.id}`} className="flex-1 min-w-0">
+                                  <motion.div whileHover={{ x: 2 }} className="flex items-center gap-2 px-2 py-2 cursor-pointer">
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-1.5 mb-0.5">
+                                        <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                          {report.product_family}
+                                        </p>
+                                        <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
+                                          · {report.status}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                        {total} clauses · {formatRelativeTime(report.updated_at)}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                      {rate !== null && (
+                                        <span className="text-xs font-bold" style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
+                                          {rate}%
+                                        </span>
+                                      )}
+                                      <ExternalLink size={11} style={{ color: 'var(--text-muted)' }} />
+                                    </div>
+                                  </motion.div>
+                                </Link>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleDeleteReport(report.id, report.product_family) }}
+                                  disabled={deletingReportId === report.id}
+                                  className="opacity-0 group-hover:opacity-100 shrink-0 p-1.5 mr-1 rounded transition-all hover:bg-[var(--surface-3)]"
+                                  style={{ color: 'var(--status-not-comply)' }}
+                                  title="Delete report"
+                                >
+                                  {deletingReportId === report.id ? <Loader size={11} className="animate-spin" /> : <X size={11} />}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
                     )
                   })}
+
+                  {/* Documents with no reports yet */}
+                  {project.spec_documents
+                    .filter(d => !reportsByDoc.has(d.id))
+                    .map(doc => {
+                      const isActive  = docPreview?.id === doc.id
+                      const isLoading = docLoading === doc.id
+                      return (
+                        <div key={doc.id}>
+                          <button
+                            onClick={() => handleDocClick(doc.id)}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left transition-all"
+                            style={{
+                              background: isActive ? 'oklch(0.65 0.18 270 / 0.10)' : 'transparent',
+                              border: isActive ? '1px solid oklch(0.65 0.18 270 / 0.25)' : '1px solid transparent',
+                            }}
+                          >
+                            {isLoading
+                              ? <Loader size={12} className="animate-spin shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                              : <FileText size={12} className="shrink-0" style={{ color: isActive ? 'var(--brand-primary)' : 'var(--text-muted)' }} />
+                            }
+                            <span className="text-xs font-medium truncate flex-1" style={{ color: isActive ? 'var(--brand-primary)' : 'var(--text-secondary)' }}>
+                              {doc.file_name}
+                            </span>
+                            <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>{doc.file_type.toUpperCase()}</span>
+                          </button>
+                          <p className="text-xs pl-7 mt-0.5" style={{ color: 'var(--text-muted)' }}>No reports yet</p>
+                        </div>
+                      )
+                    })
+                  }
                 </div>
               )}
             </div>
-
-            {/* Spec documents */}
-            {project.spec_documents.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider px-2 mb-2" style={{ color: 'var(--text-muted)' }}>
-                  Documents
-                </p>
-                <div className="space-y-0.5">
-                  {project.spec_documents.map(doc => (
-                    <div key={doc.id} className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'transparent' }}>
-                      <FileText size={13} style={{ color: 'var(--text-muted)' }} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>{doc.file_name}</p>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{doc.file_type.toUpperCase()} · {formatRelativeTime(doc.uploaded_at)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </Panel>
 
@@ -279,22 +381,51 @@ export function ProjectDetailClient({ project }: Props) {
           </div>
         </PanelResizeHandle>
 
-        {/* Right — combined export preview */}
+        {/* Right — export preview OR doc text viewer */}
         <Panel defaultSize={72} minSize={40}>
           <div className="h-full flex flex-col" style={{ background: 'var(--surface-0)' }}>
 
-            {/* Preview header */}
+            {/* Panel header */}
             <div
-              className="px-5 py-2.5 shrink-0 border-b flex items-center justify-between"
+              className="px-5 py-2.5 shrink-0 border-b flex items-center justify-between gap-3"
               style={{ borderColor: 'var(--border-default)' }}
             >
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Export Preview</span>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                {sortedReports.reduce((n, r) => n + r.compliance_rows.length, 0)} total clauses across {sortedReports.length} report{sortedReports.length !== 1 ? 's' : ''}
-              </span>
+              {docPreview ? (
+                <>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText size={14} style={{ color: 'var(--brand-primary)' }} />
+                    <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{docPreview.fileName}</span>
+                    <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>{docPreview.fileType.toUpperCase()}</span>
+                  </div>
+                  <button
+                    onClick={() => setDocPreview(null)}
+                    className="shrink-0 text-xs px-2.5 py-1 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    ← Back to Preview
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Export Preview</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {sortedReports.reduce((n, r) => n + r.compliance_rows.length, 0)} total clauses across {sortedReports.length} report{sortedReports.length !== 1 ? 's' : ''}
+                  </span>
+                </>
+              )}
             </div>
 
-            {sortedReports.length === 0 ? (
+            {docPreview ? (
+              /* ── Spec document text viewer ── */
+              <div className="flex-1 overflow-auto p-5">
+                <pre
+                  className="whitespace-pre-wrap text-xs leading-relaxed"
+                  style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}
+                >
+                  {docPreview.text || '(No text extracted from this document)'}
+                </pre>
+              </div>
+            ) : sortedReports.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
                 <div className="text-center">
                   <FileText size={32} className="mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
@@ -329,73 +460,109 @@ export function ProjectDetailClient({ project }: Props) {
                   </thead>
 
                   <tbody>
-                    {sortedReports.map(report => {
-                      const rows = [...report.compliance_rows].sort((a, b) => a.sort_order - b.sort_order)
-                      const total  = report.summary?.total ?? rows.length
-                      const comply = report.summary?.comply ?? 0
-                      const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+                    {groupOrder.map(docId => {
+                      const reports = reportsByDoc.get(docId) ?? []
+                      const doc     = docId ? docMap.get(docId) : null
+                      const docLabel = doc ? doc.file_name : 'Pasted text'
 
                       return (
                         <>
-                          {/* Product section header */}
-                          <tr key={`hdr-${report.id}`}>
+                          {/* Document divider row */}
+                          <tr key={`doc-${docId ?? 'ungrouped'}`}>
                             <td
                               colSpan={5}
-                              className="px-3 py-2 border font-semibold"
+                              className="px-3 py-1.5 border"
                               style={{
-                                background: 'var(--surface-2)',
-                                color: 'var(--text-primary)',
+                                background: 'oklch(0.65 0.18 270 / 0.08)',
+                                color: 'var(--brand-primary)',
                                 borderColor: 'var(--border-default)',
                                 borderLeft: '3px solid var(--brand-primary)',
-                                fontSize: '11px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                                letterSpacing: '0.04em',
+                                textTransform: 'uppercase',
                               }}
                             >
-                              <div className="flex items-center justify-between">
-                                <span>{report.title}</span>
-                                <div className="flex items-center gap-3 font-normal text-xs" style={{ color: 'var(--text-muted)' }}>
-                                  <span>{total} clauses</span>
-                                  {rate !== null && (
-                                    <span style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
-                                      {rate}% comply
-                                    </span>
-                                  )}
-                                  <Link href={`/projects/${project.id}/reports/${report.id}`} onClick={e => e.stopPropagation()}>
-                                    <span className="flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer" style={{ color: 'var(--brand-primary)' }}>
-                                      Open <ExternalLink size={10} />
-                                    </span>
-                                  </Link>
-                                </div>
+                              <div className="flex items-center gap-2">
+                                <FileText size={10} />
+                                {docLabel}
+                                <span style={{ color: 'var(--text-muted)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>
+                                  — {reports.reduce((n, r) => n + r.compliance_rows.length, 0)} clauses across {reports.length} report{reports.length !== 1 ? 's' : ''}
+                                </span>
                               </div>
                             </td>
                           </tr>
 
-                          {rows.length === 0 ? (
-                            <tr key={`empty-${report.id}`}>
-                              <td colSpan={5} className="px-3 py-2 border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
-                                No rows
-                              </td>
-                            </tr>
-                          ) : rows.map(row => {
-                            const bg   = STATUS_BG[row.status]   ?? 'var(--surface-1)'
-                            const text = STATUS_TEXT[row.status] ?? 'var(--text-primary)'
+                          {reports.map(report => {
+                            const rows = [...report.compliance_rows].sort((a, b) => a.sort_order - b.sort_order)
+                            const total  = report.summary?.total ?? rows.length
+                            const comply = report.summary?.comply ?? 0
+                            const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+
                             return (
-                              <tr key={row.id} style={{ background: bg }}>
-                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: row.status === 'header' ? 600 : 400 }}>
-                                  {row.clause}
-                                </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
-                                  {row.requirement}
-                                </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
-                                  {row.product_response}
-                                </td>
-                                <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: 500 }}>
-                                  {STATUS_LABEL[row.status] ?? row.status}
-                                </td>
-                                <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
-                                  {row.remark}
-                                </td>
-                              </tr>
+                              <>
+                                {/* Product section header */}
+                                <tr key={`hdr-${report.id}`}>
+                                  <td
+                                    colSpan={5}
+                                    className="px-3 py-2 border font-semibold"
+                                    style={{
+                                      background: 'var(--surface-2)',
+                                      color: 'var(--text-primary)',
+                                      borderColor: 'var(--border-default)',
+                                      borderLeft: '3px solid oklch(0.65 0.18 270 / 0.4)',
+                                      fontSize: '11px',
+                                    }}
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span>{report.title}</span>
+                                      <div className="flex items-center gap-3 font-normal text-xs" style={{ color: 'var(--text-muted)' }}>
+                                        <span>{total} clauses</span>
+                                        {rate !== null && (
+                                          <span style={{ color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)' }}>
+                                            {rate}% comply
+                                          </span>
+                                        )}
+                                        <Link href={`/projects/${project.id}/reports/${report.id}`} onClick={e => e.stopPropagation()}>
+                                          <span className="flex items-center gap-1 hover:opacity-80 transition-opacity cursor-pointer" style={{ color: 'var(--brand-primary)' }}>
+                                            Open <ExternalLink size={10} />
+                                          </span>
+                                        </Link>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+
+                                {rows.length === 0 ? (
+                                  <tr key={`empty-${report.id}`}>
+                                    <td colSpan={5} className="px-3 py-2 border text-center" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                                      No rows
+                                    </td>
+                                  </tr>
+                                ) : rows.map(row => {
+                                  const bg   = STATUS_BG[row.status]   ?? 'var(--surface-1)'
+                                  const text = STATUS_TEXT[row.status] ?? 'var(--text-primary)'
+                                  return (
+                                    <tr key={row.id} style={{ background: bg }}>
+                                      <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: row.status === 'header' ? 600 : 400 }}>
+                                        {row.clause}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
+                                        {row.requirement}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
+                                        {row.product_response}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 border align-top" style={{ borderColor: 'var(--border-subtle)', color: text, fontWeight: 500 }}>
+                                        {STATUS_LABEL[row.status] ?? row.status}
+                                      </td>
+                                      <td className="px-2.5 py-1.5 border align-top whitespace-pre-wrap" style={{ borderColor: 'var(--border-subtle)', color: text }}>
+                                        {row.remark}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </>
                             )
                           })}
                         </>

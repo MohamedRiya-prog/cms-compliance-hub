@@ -6,10 +6,11 @@ import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderOpen, Settings, ChevronLeft, ChevronRight,
-  LogOut, Package, BookOpen, Building2, Menu, X,
+  LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/components/theme-provider'
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -165,6 +166,7 @@ export function Sidebar({ userEmail, userName, userRole }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
   const pathname = usePathname()
   const router   = useRouter()
+  const { theme, toggleTheme } = useTheme()
 
   // Close drawer on navigation
   useEffect(() => { setMobileOpen(false) }, [pathname])
@@ -194,18 +196,36 @@ export function Sidebar({ userEmail, userName, userRole }: SidebarProps) {
           )}
         </AnimatePresence>
       </div>
-      <button
-        onClick={handleLogout}
-        className={cn('w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all hover:bg-[var(--surface-2)]', compact && 'justify-center')}
-        style={{ color: 'var(--text-secondary)' }}
-      >
-        <LogOut size={16} className="shrink-0" />
-        <AnimatePresence>
-          {!compact && (
-            <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>Sign Out</motion.span>
-          )}
-        </AnimatePresence>
-      </button>
+      <div className={cn('flex gap-1', compact ? 'flex-col' : 'flex-row')}>
+        <button
+          onClick={toggleTheme}
+          className={cn('flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all hover:bg-[var(--surface-2)]', compact ? 'justify-center w-full' : 'flex-1')}
+          style={{ color: 'var(--text-secondary)' }}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? <Sun size={16} className="shrink-0" /> : <Moon size={16} className="shrink-0" />}
+          <AnimatePresence>
+            {!compact && (
+              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+        <button
+          onClick={handleLogout}
+          className={cn('flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all hover:bg-[var(--surface-2)]', compact ? 'justify-center w-full' : '')}
+          style={{ color: 'var(--text-secondary)' }}
+          title="Sign out"
+        >
+          <LogOut size={16} className="shrink-0" />
+          <AnimatePresence>
+            {!compact && (
+              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>Sign Out</motion.span>
+            )}
+          </AnimatePresence>
+        </button>
+      </div>
     </div>
   )
 

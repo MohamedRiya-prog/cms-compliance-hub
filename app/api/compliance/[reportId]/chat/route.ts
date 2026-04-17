@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
-import { buildSystemPrompt } from '@/lib/prompt-builder'
+import { buildChatSystemPrompt } from '@/lib/prompt-builder'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -44,7 +44,7 @@ export async function POST(
   }
 
   const rows = [...(typedReport.compliance_rows ?? [])].sort((a, b) => a.sort_order - b.sort_order)
-  const systemPrompt = await buildSystemPrompt(typedReport.product_family)
+  const systemPrompt = await buildChatSystemPrompt(typedReport.product_family)
 
   // Fetch chat history
   const { data: history } = await supabase
@@ -74,21 +74,43 @@ export async function POST(
     },
   ]
 
-  const fullSystemPrompt = systemPrompt + `
+  const modeInstruction = referencedRow
+    ? `
 
-IMPORTANT — ROW UPDATES:
-Each row in the compliance table is prefixed with its ROW_ID (e.g. ROW_ID:abc-123).
-Whenever you suggest a correction or update to any row — whether asked directly or as part of your analysis — you MUST append a structured update at the very end of your response using this exact format:
+SINGLE ROW MODE — ABSOLUTE OUTPUT RULE:
+Re-evaluate ONLY this row using the product data and compliance rules above.
+Your ENTIRE response must be EXACTLY ONE [UPDATE_ROW] block. Zero words before it, zero words after it. No greeting, no explanation, nothing.
 
-[UPDATE_ROW]{"rowId":"<exact ROW_ID from the table>","clause":"<clause ref>","productResponse":"<updated response>","status":"<comply|not_comply|noted|not_part_of_proposal>","remark":"<updated remark>"}[/UPDATE_ROW]
+Row to re-evaluate:
+ROW_ID: ${referencedRow.id}
+Clause: ${referencedRow.clause}
+Current status: ${referencedRow.status}
+Current Product Response: ${referencedRow.product_response}
+Current Remark: ${referencedRow.remark}
+
+Emit the corrected block now using this exact format:
+[UPDATE_ROW]{"rowId":"${referencedRow.id}","clause":"${referencedRow.clause}","productResponse":"<corrected value>","status":"<comply|not_comply|noted|not_part_of_proposal|header>","remark":"<corrected remark>"}[/UPDATE_ROW]`
+    : `
+
+RESPONSE STYLE: Reply in 1-2 sentences maximum. No preamble, no summary of what you did.
+
+IMPORTANT — TABLE STRUCTURE:
+- Rows with status HEADER are product/section title rows. The model name (e.g. "EVFD-10") is stored in their "requirement" field. These ARE valid update targets.
+- All other rows are compliance data rows (Product Response, Status, Remark).
+- Every row has a ROW_ID — NEVER ask the user to provide one. NEVER invent or guess one.
+
+ROW UPDATES — append at the very end of your response:
+
+[UPDATE_ROW]{"rowId":"<exact ROW_ID>","clause":"<clause>","requirement":"<new model name — HEADER rows only>","productResponse":"<updated product response>","status":"<comply|not_comply|noted|not_part_of_proposal|header>","remark":"<updated remark>"}[/UPDATE_ROW]
 
 Rules:
-- Use the exact ROW_ID from the table — never invent or guess one.
-- Always include this tag whenever you recommend changing a row, even if the user didn't use the word "update".
-- Your explanation goes before the tag; the tag goes at the very end.
-- If suggesting updates to multiple rows, append one [UPDATE_ROW]...[/UPDATE_ROW] block per row.
+- Use only ROW_IDs from the table. NEVER ask the user for one. NEVER invent one.
+- When changing the product model (e.g. EVFD-10D → EVFD-10): emit one [UPDATE_ROW] for the HEADER row (set "requirement" to the new model name) PLUS one [UPDATE_ROW] for every data row that changes as a result.
+- For data rows: omit the "requirement" field.
+- Emit [UPDATE_ROW] blocks for any row you recommend changing.
+- All [UPDATE_ROW] blocks go at the very end. Do NOT reproduce the full table.`
 
-CRITICAL — DO NOT output compliance tables as plain text in the chat. Never reproduce the full table or a new table as a text response. If the entire report needs to be regenerated for a different product, tell the user to use the "Regenerate" button in the report header and select the correct product family. Only use [UPDATE_ROW] blocks for individual row corrections.`
+  const fullSystemPrompt = systemPrompt + modeInstruction
 
   // Save user message
   await supabase.from('chat_messages').insert({
@@ -101,7 +123,7 @@ CRITICAL — DO NOT output compliance tables as plain text in the chat. Never re
   // Stream response
   const stream = anthropic.messages.stream({
     model: 'claude-opus-4-6',
-    max_tokens: 2048,
+    max_tokens: referencedRow ? 512 : 2048,
     system: fullSystemPrompt,
     messages,
   })

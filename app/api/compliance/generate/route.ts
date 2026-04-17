@@ -12,6 +12,7 @@ const schema = z.object({
   specDocumentId: z.string().uuid().optional(),
   projectId: z.string().uuid(),
   title: z.string().default('Compliance Report'),
+  force: z.boolean().optional(), // skip dedup — used by the Regenerate button
 })
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { specText, productFamily, specDocumentId, projectId, title } = parsed.data
+  const { specText, productFamily, specDocumentId, projectId, title, force } = parsed.data
 
   // Verify project ownership
   const { data: project } = await supabase
@@ -36,17 +37,20 @@ export async function POST(req: NextRequest) {
     .single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-  // Deduplication: check if same spec hash exists
-  const contentHash = computeTextHash(specText)
-  const { data: existing } = await supabase
-    .from('compliance_reports')
-    .select('id')
-    .eq('project_id', projectId)
-    .filter('generation_metadata->content_hash', 'eq', contentHash)
-    .single()
+  const contentHash = computeTextHash(specText + '|' + productFamily)
 
-  if (existing) {
-    return NextResponse.json({ id: existing.id, cached: true })
+  // Deduplication: skip when force=true (explicit Regenerate) — only apply on initial upload
+  if (!force) {
+    const { data: existing } = await supabase
+      .from('compliance_reports')
+      .select('id')
+      .eq('project_id', projectId)
+      .filter('generation_metadata->content_hash', 'eq', contentHash)
+      .single()
+
+    if (existing) {
+      return NextResponse.json({ id: existing.id, cached: true })
+    }
   }
 
   // Build system prompt

@@ -88,11 +88,42 @@ For BDD/PRD sleeves and bird screens (application-dependent accessories):
 ---
 
 ## RULE 9 — FIRE DAMPER MODEL SELECTION (EVFD, EFD, EFSD)
-- Spec 1.5 hr or 2 hr → EVFD-10/10D, EFD-140/150, EFSD-141/151 series
-- Spec 3 hr → EVFD-30/30D, EFD-340/350, EFSD-341/351 series
+
+### 9A — Fire Rating (hour-based selection):
+- Spec 1.5 hr or 2 hr → 10-series (EVFD-10/10D, EFD-140/150, EFSD-141/151)
+- Spec 3 hr → 30-series (EVFD-30/30D, EFD-340/350, EFSD-341/351)
 - No rating specified → 1.5-hour series as default
 - Spec states both 2 hr and 3 hr → propose both models in header
 - Spec says "typically X hours" → treat as single rating, propose single model
+
+### 9B — EVFD Static vs Dynamic Selection (ABSOLUTE — READ EVERY WORD):
+
+**What the "D" suffix means:**
+- EVFD-10 / EVFD-30 (no D): Static rating — closes after the HVAC system has shut down, when airflow has already stopped.
+- EVFD-10D / EVFD-30D (D suffix): Dynamic rating — closes while the HVAC system is still running, against live airflow.
+- ALL EVFD models (standard and D-series alike) include stainless steel closure springs as standard equipment.
+
+**DEFAULT IS ALWAYS STANDARD (non-D).** Propose EVFD-10 or EVFD-30 unless one of these exact triggers appears in the specification text:
+
+TRIGGER 1 — Spec explicitly uses the word "dynamic" (e.g. "dynamic rated", "dynamic closure", "UL 555 dynamic rated")
+TRIGGER 2 — Spec explicitly states closure must occur while the system is operating / fans are running / airflow is present
+TRIGGER 3 — Spec explicitly names the D-series model (EVFD-10D or EVFD-30D)
+
+**If NONE of these triggers are present → propose EVFD-10 or EVFD-30 (standard). No exceptions.**
+
+This includes — do NOT treat these as triggers for D-series:
+- Spec mentions "spring" or "spring-loaded" → ALL EVFD models have springs → propose standard
+- Spec mentions closure velocity (e.g. "2,000 fpm") without explicitly requiring dynamic operation → propose standard
+- Spec describes the damper as installed in an operating HVAC system → installation context is not a dynamic-rating trigger → propose standard
+- Spec says "curtain type", "UL 555 listed", "fusible link" without the word "dynamic" → propose standard
+- Any ambiguous wording where you are not 100% certain → propose standard
+
+**WRONG:** Spec says "spring-loaded fire damper" → proposing EVFD-10D because it has springs
+**WRONG:** Spec says "2,000 fpm rated fire damper" → proposing EVFD-10D because of the velocity
+**WRONG:** Spec says "fire damper in supply duct" → proposing EVFD-10D because the duct carries airflow
+**CORRECT:** Spec says "static fire damper" → propose EVFD-10 or EVFD-30
+**CORRECT:** Spec says "dynamic fire damper" or "UL 555 dynamic rated" → propose EVFD-10D or EVFD-30D
+**CORRECT:** Spec says "fire damper" with no static/dynamic qualifier → propose EVFD-10 or EVFD-30 (default)
 
 ---
 

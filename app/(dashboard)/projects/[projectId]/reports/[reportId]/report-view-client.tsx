@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import {
   ArrowLeft, Download, CheckCircle, MessageSquare, Filter,
-  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw
+  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw, Trash2
 } from 'lucide-react'
 import { cn, formatStatus, getStatusBgClass, formatDate } from '@/lib/utils'
 
@@ -83,11 +83,13 @@ interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  updatedCount?: number
 }
 
 interface RowUpdate {
   rowId: string
   clause: string
+  requirement?: string      // used when updating header rows (model name lives here)
   productResponse: string
   status: string
   remark: string
@@ -104,9 +106,11 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null)
-  const [pendingUpdate, setPendingUpdate] = useState<RowUpdate | null>(null)
+  const [redoAllLoading, setRedoAllLoading] = useState(false)
+  const [reportSummary, setReportSummary] = useState(report.summary)
   const [exporting, setExporting] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [regenOpen, setRegenOpen] = useState(false)
   const [regenFamily, setRegenFamily] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
@@ -114,7 +118,7 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
   const chatEndRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
 
-  const summary = report.summary ?? { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
+  const summary = reportSummary ?? { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
 
   const filtered = filter === 'all' ? rows : rows.filter(r => r.status === filter)
 
@@ -171,6 +175,20 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
     }
   }
 
+  async function handleDeleteReport() {
+    if (!confirm(`Delete "${report.title}"? This cannot be undone.`)) return
+    setDeleting(true)
+    const res = await fetch(`/api/compliance/${report.id}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (res.ok) {
+      router.push(`/projects/${project.id}`)
+      router.refresh()
+    } else {
+      alert(data.error ?? 'Delete failed')
+      setDeleting(false)
+    }
+  }
+
   async function handleApprove() {
     setApproving(true)
     await fetch(`/api/compliance/${report.id}`, {
@@ -195,6 +213,7 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
           specDocumentId: report.specDocumentId ?? undefined,
           projectId: project.id,
           title: PRODUCT_FAMILIES[regenFamily] ?? regenFamily,
+          force: true,
         }),
       })
       const data = await res.json()
@@ -243,47 +262,82 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
       )
     }
 
-    // Parse all UPDATE_ROW blocks — take the first valid one as pending
+    // Parse and auto-apply all UPDATE_ROW blocks
     const updateMatches = [...fullText.matchAll(/\[UPDATE_ROW\]([\s\S]*?)\[\/UPDATE_ROW\]/g)]
+    const validUpdates: RowUpdate[] = []
     for (const m of updateMatches) {
       try {
         const update = JSON.parse(m[1]) as RowUpdate
-        // Verify the rowId actually exists in our rows
         if (rows.some(r => r.id === update.rowId)) {
-          setPendingUpdate(update)
-          break
+          validUpdates.push(update)
         }
       } catch {}
+    }
+
+    if (validUpdates.length > 0) {
+      setRows(prev => prev.map(r => {
+        const update = validUpdates.find(u => u.rowId === r.id)
+        if (!update) return r
+        return {
+          ...r,
+          clause: update.clause ?? r.clause,
+          requirement: update.requirement ?? r.requirement,
+          product_response: update.productResponse ?? r.product_response,
+          status: update.status ?? r.status,
+          remark: update.remark ?? r.remark,
+          is_edited: true,
+        }
+      }))
+      for (const update of validUpdates) {
+        fetch(`/api/compliance/${report.id}/rows/${update.rowId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ...(update.requirement !== undefined && { requirement: update.requirement }),
+            productResponse: update.productResponse,
+            status: update.status,
+            remark: update.remark,
+          }),
+        })
+      }
+      setChatMessages(prev => prev.map(m =>
+        m.id === assistantId ? { ...m, updatedCount: validUpdates.length } : m
+      ))
     }
 
     setChatLoading(false)
   }
 
-  function acceptRowUpdate() {
-    if (!pendingUpdate) return
-    setRows(prev => prev.map(r =>
-      r.id === pendingUpdate.rowId
-        ? {
-            ...r,
-            clause: pendingUpdate.clause ?? r.clause,
-            product_response: pendingUpdate.productResponse ?? r.product_response,
-            status: pendingUpdate.status ?? r.status,
-            remark: pendingUpdate.remark ?? r.remark,
-            is_edited: true,
-          }
-        : r
-    ))
-    // Persist
-    fetch(`/api/compliance/${report.id}/rows/${pendingUpdate.rowId}`, {
-      method: 'PATCH',
+  async function handleRedoAll() {
+    setRedoAllLoading(true)
+    const instructions = chatInput.trim() || undefined
+    if (instructions) {
+      setChatMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: instructions }])
+      setChatInput('')
+    }
+    const res = await fetch(`/api/compliance/${report.id}/regen`, {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        productResponse: pendingUpdate.productResponse,
-        status: pendingUpdate.status,
-        remark: pendingUpdate.remark,
-      }),
+      body: JSON.stringify({ instructions }),
     })
-    setPendingUpdate(null)
+    const data = await res.json()
+    if (res.ok) {
+      setRows(data.rows)
+      setReportSummary(data.summary)
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant' as const,
+        content: `✓ Regenerated: ${data.rowCount} rows`,
+        updatedCount: data.rowCount,
+      }])
+    } else {
+      setChatMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'assistant' as const,
+        content: 'Regeneration failed: ' + (data.error ?? 'Unknown error'),
+      }])
+    }
+    setRedoAllLoading(false)
   }
 
   const complianceRate = summary.total > 0
@@ -416,6 +470,16 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
             {exporting ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
             Export
           </motion.button>
+          <button
+            onClick={handleDeleteReport}
+            disabled={deleting}
+            className="p-1.5 rounded-lg transition-all hover:bg-[var(--surface-3)] border"
+            style={{ color: 'var(--status-not-comply)', borderColor: 'var(--border-default)', background: 'var(--surface-2)', opacity: deleting ? 0.5 : 1 }}
+            title="Delete report"
+          >
+            {deleting ? <Loader size={14} className="animate-spin" /> : <Trash2 size={14} />}
+          </button>
+
           {/* Chat toggle — desktop only */}
           <button
             onClick={() => setChatOpen(o => !o)}
@@ -659,20 +723,38 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
             >
               {/* Chat header */}
               <div className="px-4 py-3 border-b shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
-                <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
                     Re-verify with Claude
                   </h3>
-                  {selectedRowId && (
-                    <motion.span
-                      initial={{ scale: 0.8, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      className="text-xs px-2 py-0.5 rounded-full"
-                      style={{ background: 'oklch(0.65 0.18 270 / 0.15)', color: 'var(--brand-primary)', border: '1px solid oklch(0.65 0.18 270 / 0.3)' }}
+                  <div className="flex items-center gap-2 min-w-0">
+                    {selectedRowId && (
+                      <motion.span
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="text-xs px-2 py-0.5 rounded-full truncate"
+                        style={{ background: 'oklch(0.65 0.18 270 / 0.15)', color: 'var(--brand-primary)', border: '1px solid oklch(0.65 0.18 270 / 0.3)' }}
+                      >
+                        Row: {rows.find(r => r.id === selectedRowId)?.clause}
+                      </motion.span>
+                    )}
+                    <motion.button
+                      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      onClick={handleRedoAll}
+                      disabled={redoAllLoading}
+                      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border shrink-0"
+                      style={{
+                        background: 'var(--surface-2)',
+                        color: 'var(--text-secondary)',
+                        borderColor: 'var(--border-default)',
+                        opacity: redoAllLoading ? 0.6 : 1,
+                      }}
+                      title="Re-run full compliance analysis using product data and rules"
                     >
-                      Row: {rows.find(r => r.id === selectedRowId)?.clause}
-                    </motion.span>
-                  )}
+                      {redoAllLoading ? <Loader size={10} className="animate-spin" /> : <RotateCcw size={10} />}
+                      Re-do All
+                    </motion.button>
+                  </div>
                 </div>
                 {selectedRowId && (
                   <button
@@ -717,8 +799,13 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                       border: msg.role === 'user' ? '1px solid oklch(0.65 0.18 270 / 0.3)' : '1px solid var(--border-subtle)',
                     }}
                   >
-                    {/* Strip UPDATE_ROW tags from display */}
-                    {msg.content.replace(/\[UPDATE_ROW\][\s\S]*?\[\/UPDATE_ROW\]/g, '').trim()}
+                    {(() => {
+                      const displayed = msg.content.replace(/\[UPDATE_ROW\][\s\S]*?\[\/UPDATE_ROW\]/g, '').trim()
+                      if (!displayed && msg.updatedCount !== undefined && msg.updatedCount > 0) {
+                        return `✓ ${msg.updatedCount} row${msg.updatedCount > 1 ? 's' : ''} updated`
+                      }
+                      return displayed || msg.content
+                    })()}
                   </motion.div>
                 ))}
 
@@ -736,34 +823,6 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                   </div>
                 )}
 
-                {/* Update suggestion card */}
-                <AnimatePresence>
-                  {pendingUpdate && (
-                    <motion.div
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -8 }}
-                      className="rounded-xl p-3 border"
-                      style={{ background: 'oklch(0.65 0.18 270 / 0.08)', borderColor: 'oklch(0.65 0.18 270 / 0.3)' }}
-                    >
-                      <p className="text-xs font-medium mb-2" style={{ color: 'var(--brand-primary)' }}>
-                        Claude suggests updating clause {pendingUpdate.clause}
-                      </p>
-                      <p className="text-xs mb-1" style={{ color: 'var(--text-secondary)' }}>
-                        Status: <span style={{ color: STATUS_COLORS[pendingUpdate.status] }}>{formatStatus(pendingUpdate.status)}</span>
-                      </p>
-                      <div className="flex gap-2 mt-2">
-                        <button onClick={acceptRowUpdate} className="flex-1 py-1 rounded text-xs font-medium" style={{ background: 'oklch(0.72 0.19 155 / 0.2)', color: 'var(--status-comply)' }}>
-                          Accept
-                        </button>
-                        <button onClick={() => setPendingUpdate(null)} className="flex-1 py-1 rounded text-xs font-medium" style={{ background: 'oklch(0.68 0.22 25 / 0.15)', color: 'var(--status-not-comply)' }}>
-                          Dismiss
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
                 <div ref={chatEndRef} />
               </div>
 
@@ -774,7 +833,7 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
                     value={chatInput}
                     onChange={e => setChatInput(e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleChatSend() } }}
-                    placeholder="Ask about a clause…"
+                    placeholder={selectedRowId ? "Ask about this row…" : "Ask a question, or type an instruction and click Re-do All…"}
                     rows={2}
                     className="flex-1 text-xs p-2.5 rounded-lg resize-none outline-none"
                     style={{

@@ -138,6 +138,27 @@ Return ONLY a valid JSON object with a single "rows" array. Each object in the a
 Return ONLY valid JSON. No markdown code fences, no explanation outside the JSON object.`
 }
 
+export async function buildChatSystemPrompt(productFamily?: string): Promise<string> {
+  const [rules, products] = await Promise.all([
+    getComplianceRules(),
+    getProductData(productFamily),
+  ])
+
+  return `You are an HVAC Compliance Engineer assistant for Century Mechanical Systems Factory LLC (Excelair), UAE. You are helping the user review and correct an existing compliance table.
+
+## PRODUCT DATA
+${products}
+
+## COMPLIANCE RULES (ABSOLUTE — override everything)
+${rules}
+
+## YOUR ROLE IN THIS CONVERSATION
+- Answer questions about compliance decisions, explain why a clause was marked a certain way, and suggest corrections.
+- Respond in clear, concise natural language.
+- Do NOT reproduce the full compliance table in your response.
+- Do NOT output JSON.`
+}
+
 export function computePromptVersion(rules: string, products: string, examples: string): PromptVersion {
   const hash = (s: string) => {
     let h = 0

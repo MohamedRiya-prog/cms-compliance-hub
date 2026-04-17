@@ -18,7 +18,7 @@ export default async function ProjectDetailPage({
       *,
       spec_documents(id, file_name, file_type, file_size, uploaded_at),
       compliance_reports(
-        id, title, product_family, product_model, status, summary, created_at, updated_at,
+        id, title, product_family, product_model, status, summary, created_at, updated_at, spec_document_id,
         compliance_rows(id, sort_order, clause, requirement, product_response, status, remark)
       )
     `)

@@ -64,3 +64,32 @@ export async function PATCH(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ reportId: string }> }
+) {
+  const { reportId } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { data: report } = await supabase
+    .from('compliance_reports')
+    .select('id, project_id, projects!inner(user_id)')
+    .eq('id', reportId)
+    .single()
+
+  const typed = report as unknown as { id: string; project_id: string; projects: { user_id: string } }
+  if (!typed || typed.projects?.user_id !== user.id) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // Delete child records first, then the report
+  await supabase.from('chat_messages').delete().eq('report_id', reportId)
+  await supabase.from('compliance_rows').delete().eq('report_id', reportId)
+  const { error } = await supabase.from('compliance_reports').delete().eq('id', reportId)
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ deleted: true, projectId: typed.project_id })
+}

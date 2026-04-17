@@ -57,21 +57,30 @@
 **Models:** EVFD-10-A/B/C, EVFD-10D-A/B/C, EVFD-30-A/B/C, EVFD-30D-A/B/C
 - 10 series: 1.5-hour UL 555 fire rated
 - 30 series: 3-hour UL 555 fire rated
-- D series: Dynamic rated (all D-series models)
 - Style A: Blades in airstream; Style B: Blades out of airstream; Style C: Blades out + 100% free area
 
-**Ratings:**
+**STATIC vs DYNAMIC — MODEL SELECTION (applies to all compliance decisions):**
+- EVFD-10 / EVFD-30 (no D suffix): Static rated — closes after system shutdown, when airflow has stopped. DEFAULT model to propose.
+- EVFD-10D / EVFD-30D (D suffix): Dynamic rated — closes while the system is operating, against live airflow. Propose ONLY when spec explicitly requires dynamic rating or closure against airflow.
+- Closure springs are standard on ALL models (standard and D-series). Spring presence does NOT indicate dynamic rating.
+
+**Ratings — EVFD-10 / EVFD-30 (Static, default):**
 - Maximum Rated Pressure: 4 in.wg. (1.0 kPa)
-- Maximum Dynamic Closure Velocity: 2,000 fpm standard; 4,000 fpm in limited configurations
+- Rated for static closure (system off, no airflow)
 - UL 555 listed; Civil Defence approved
 
-**Construction:**
+**Ratings — EVFD-10D / EVFD-30D (Dynamic, specify only when required):**
+- Maximum Rated Pressure: 4 in.wg. (1.0 kPa)
+- Maximum Dynamic Closure Velocity: 2,000 fpm standard; 4,000 fpm in limited configurations
+- UL 555 dynamic rated; Civil Defence approved
+
+**Construction (all models):**
 - Frame: 22 gauge (0.85mm) galvanized steel
 - Frame (optional): 22 gauge (0.85mm) Stainless 304 Steel.
 - Blades: 24 gauge (0.70mm) galvanized steel, curtain style
 - Blades (optional): 24 gauge (0.70mm) stainless 304 steel, curtain style
 - Sleeve: Factory installed. Gauges: 20 (1.0mm), 18 (1.2mm), 16 (1.6mm), 14 (2.0mm), 10 (3.5mm). Length: 300mm standard
-- Closure springs: Stainless steel, standard on all models
+- Closure springs: Stainless steel, standard on ALL models (standard and D-series)
 - Fusible link: 165°F (74°C), replaceable;
 - Fusible link (optional): 212°F (100°C)
 - Mounting: Vertical and horizontal (10-series); Vertical only (30-series)
