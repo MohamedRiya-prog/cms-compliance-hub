@@ -5,9 +5,9 @@ import { buildSystemPrompt } from '@/lib/prompt-builder'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-function formatTableAsText(rows: Array<{ clause: string; requirement: string; product_response: string; status: string; remark: string }>): string {
+function formatTableAsText(rows: Array<{ id: string; clause: string; requirement: string; product_response: string; status: string; remark: string }>): string {
   return rows.map(r =>
-    `[${r.clause}] ${r.status.toUpperCase()} — ${r.requirement}\nProduct Response: ${r.product_response}\nRemark: ${r.remark}`
+    `ROW_ID:${r.id} | [${r.clause}] ${r.status.toUpperCase()} — ${r.requirement}\nProduct Response: ${r.product_response}\nRemark: ${r.remark}`
   ).join('\n\n')
 }
 
@@ -69,17 +69,24 @@ export async function POST(
     {
       role: 'user',
       content: referencedRow
-        ? `Regarding clause ${referencedRow.clause} (currently ${referencedRow.status}): ${message}`
+        ? `Regarding clause ${referencedRow.clause} (ROW_ID:${referencedRow.id}, currently ${referencedRow.status}): ${message}`
         : message,
     },
   ]
 
   const fullSystemPrompt = systemPrompt + `
 
-If the user asks you to update a row, respond with your explanation first, then append the update in this exact format at the very end:
-[UPDATE_ROW]{"rowId":"<id>","clause":"<clause>","productResponse":"<value>","status":"<status>","remark":"<remark>"}[/UPDATE_ROW]
+IMPORTANT — ROW UPDATES:
+Each row in the compliance table is prefixed with its ROW_ID (e.g. ROW_ID:abc-123).
+Whenever you suggest a correction or update to any row — whether asked directly or as part of your analysis — you MUST append a structured update at the very end of your response using this exact format:
 
-Only include [UPDATE_ROW] if the user explicitly asks to change a row.`
+[UPDATE_ROW]{"rowId":"<exact ROW_ID from the table>","clause":"<clause ref>","productResponse":"<updated response>","status":"<comply|not_comply|noted|not_part_of_proposal>","remark":"<updated remark>"}[/UPDATE_ROW]
+
+Rules:
+- Use the exact ROW_ID from the table — never invent or guess one.
+- Always include this tag whenever you recommend changing a row, even if the user didn't use the word "update".
+- Your explanation goes before the tag; the tag goes at the very end.
+- If suggesting updates to multiple rows, append one [UPDATE_ROW]...[/UPDATE_ROW] block per row.`
 
   // Save user message
   await supabase.from('chat_messages').insert({

@@ -189,12 +189,16 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
       )
     }
 
-    // Parse UPDATE_ROW tags
-    const updateMatch = fullText.match(/\[UPDATE_ROW\]([\s\S]*?)\[\/UPDATE_ROW\]/)
-    if (updateMatch) {
+    // Parse all UPDATE_ROW blocks — take the first valid one as pending
+    const updateMatches = [...fullText.matchAll(/\[UPDATE_ROW\]([\s\S]*?)\[\/UPDATE_ROW\]/g)]
+    for (const m of updateMatches) {
       try {
-        const update = JSON.parse(updateMatch[1]) as RowUpdate
-        setPendingUpdate(update)
+        const update = JSON.parse(m[1]) as RowUpdate
+        // Verify the rowId actually exists in our rows
+        if (rows.some(r => r.id === update.rowId)) {
+          setPendingUpdate(update)
+          break
+        }
       } catch {}
     }
 
