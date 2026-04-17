@@ -33,10 +33,11 @@ export default async function DashboardPage() {
       .in('id', userIds)
     const profileMap = new Map((ownerProfiles ?? []).map((p: { id: string; full_name: string; email: string }) => [p.id, p]))
 
-    const projectsWithOwner = (allProjects ?? []).map((p: Record<string, unknown>) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const projectsWithOwner = ((allProjects ?? []) as any[]).map(p => ({
       ...p,
-      ownerName: (profileMap.get(p.user_id as string) as { full_name?: string; email?: string } | undefined)?.full_name
-        ?? (profileMap.get(p.user_id as string) as { full_name?: string; email?: string } | undefined)?.email
+      ownerName: (profileMap.get(p.user_id) as { full_name?: string; email?: string } | undefined)?.full_name
+        ?? (profileMap.get(p.user_id) as { full_name?: string; email?: string } | undefined)?.email
         ?? 'Unknown',
     }))
 
