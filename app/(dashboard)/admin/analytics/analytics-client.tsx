@@ -222,9 +222,9 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
         ) : (
           <ResponsiveContainer width="100%" height={chartHeight}>
             <BarChart
-              data={products.map(p => ({ ...p, truncatedFamily: p.family.slice(0, 20) }))}
+              data={products}
               layout="vertical"
-              margin={{ top: 0, right: 60, left: 10, bottom: 0 }}
+              margin={{ top: 0, right: 56, left: 8, bottom: 0 }}
             >
               <XAxis
                 type="number"
@@ -236,9 +236,9 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
               />
               <YAxis
                 type="category"
-                dataKey="truncatedFamily"
-                width={130}
-                tick={{ fontSize: 11, fill: 'var(--text-secondary)' }}
+                dataKey="family"
+                width={200}
+                tick={{ fontSize: 11, fill: 'var(--text-secondary)', width: 196 }}
                 axisLine={false}
                 tickLine={false}
               />
@@ -275,15 +275,17 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
           className="rounded-xl p-5 border mb-6"
           style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Common Failing Clauses —{' '}
-              <span style={{ color: 'var(--text-primary)' }}>{displayFamily}</span>
+          <div className="flex items-start justify-between gap-3 mb-4">
+            <h2 className="text-sm font-semibold min-w-0" style={{ color: 'var(--text-secondary)' }}>
+              Common Failing Clauses
+              <span className="block mt-0.5 text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                {displayFamily}
+              </span>
             </h2>
             {selectedFamily && (
               <button
                 onClick={() => setSelectedFamily(null)}
-                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors hover:bg-[var(--surface-2)]"
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs shrink-0 transition-colors hover:bg-[var(--surface-2)]"
                 style={{ color: 'var(--text-muted)' }}
               >
                 <X size={12} />
@@ -321,9 +323,12 @@ export function AnalyticsClient({ overview, products, gaps, users }: Props) {
                       <td className="py-2.5 pr-4 font-mono" style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                         {gap.clause}
                       </td>
-                      <td className="py-2.5 pr-4" style={{ color: 'var(--text-primary)', maxWidth: 320 }}>
-                        <span title={gap.requirement}>
-                          {gap.requirement.slice(0, 80)}{gap.requirement.length > 80 ? '…' : ''}
+                      <td className="py-2.5 pr-4" style={{ color: 'var(--text-primary)', maxWidth: 360 }}>
+                        <span
+                          className="line-clamp-3"
+                          title={gap.requirement}
+                        >
+                          {gap.requirement}
                         </span>
                       </td>
                       <td className="py-2.5 pr-4 font-semibold" style={{ color: 'var(--text-primary)' }}>
