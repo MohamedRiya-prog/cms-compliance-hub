@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import {
   ArrowLeft, Download, CheckCircle, MessageSquare, Filter,
-  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw
+  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw
 } from 'lucide-react'
 import { cn, formatStatus, getStatusBgClass, formatDate } from '@/lib/utils'
 
@@ -28,9 +29,32 @@ interface Report {
   status: string
   summary: Record<string, number> | null
   specText: string | null
+  specDocumentId: string | null
   createdAt: string
   updatedAt: string
   generationMetadata: Record<string, unknown> | null
+}
+
+const PRODUCT_FAMILIES: Record<string, string> = {
+  BDD_PRD: 'Backdraft & Pressure Relief Dampers',
+  EVFD:    'Fire Dampers',
+  EFD:     'Motorized Fire Dampers',
+  EFSD:    'Combination Fire & Smoke Dampers',
+  ESD:     'Smoke Dampers',
+  EVCD:    'Volume Control Dampers',
+  SA:      'Sound Attenuators',
+  FAL:     'Fresh Air Louvers',
+  PRD:     'Barometric Relief Dampers',
+  GTD:     'Gas Tight Dampers',
+  VAV:     'Pressure Independent VAV',
+  LLVCD:   'Low Leakage Aluminum VCD',
+  SDGR:    'Deflection Grilles & Registers',
+  LBG:     'Linear Bar Grilles',
+  LSD:     'Linear Slot Diffusers',
+  FBD:     'Flow Bar Diffusers',
+  AL:      'Acoustic Louvers',
+  STL:     'Sand Trap Louvers',
+  FAL_A:   'Fresh Air Louver (FAL-A)',
 }
 
 interface Props {
@@ -83,7 +107,12 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
   const [pendingUpdate, setPendingUpdate] = useState<RowUpdate | null>(null)
   const [exporting, setExporting] = useState(false)
   const [approving, setApproving] = useState(false)
+  const [regenOpen, setRegenOpen] = useState(false)
+  const [regenFamily, setRegenFamily] = useState('')
+  const [regenLoading, setRegenLoading] = useState(false)
+  const [regenError, setRegenError] = useState('')
   const chatEndRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
 
   const summary = report.summary ?? { total: 0, comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0 }
 
@@ -150,6 +179,31 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
       body: JSON.stringify({ status: 'approved' }),
     })
     setApproving(false)
+  }
+
+  async function handleRegenerate() {
+    if (!regenFamily || !report.specText) return
+    setRegenLoading(true)
+    setRegenError('')
+    try {
+      const res = await fetch('/api/compliance/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          specText: report.specText,
+          productFamily: regenFamily,
+          specDocumentId: report.specDocumentId ?? undefined,
+          projectId: project.id,
+          title: PRODUCT_FAMILIES[regenFamily] ?? regenFamily,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      router.push(`/projects/${project.id}/reports/${data.id}`)
+    } catch (err: unknown) {
+      setRegenError(err instanceof Error ? err.message : 'Generation failed')
+      setRegenLoading(false)
+    }
   }
 
   async function handleChatSend() {
@@ -283,6 +337,75 @@ export function ReportViewClient({ report, project, initialRows }: Props) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {/* Regenerate button */}
+          <div className="relative hidden md:block">
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={() => { setRegenOpen(o => !o); setRegenError('') }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+              style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
+              title="Regenerate with a different product family"
+            >
+              <RefreshCw size={12} /> Regenerate
+            </motion.button>
+
+            <AnimatePresence>
+              {regenOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 6, scale: 0.97 }}
+                  className="absolute right-0 top-9 z-50 w-72 rounded-xl p-4 shadow-xl"
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border-default)' }}
+                >
+                  <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                    Regenerate with correct product
+                  </p>
+                  <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                    Uses the same spec text but runs a new analysis for the selected product family.
+                  </p>
+                  <select
+                    value={regenFamily}
+                    onChange={e => setRegenFamily(e.target.value)}
+                    className="w-full rounded-lg px-3 py-2 text-xs outline-none mb-3"
+                    style={{ background: 'var(--surface-3)', border: '1px solid var(--border-default)', color: regenFamily ? 'var(--text-primary)' : 'var(--text-muted)' }}
+                  >
+                    <option value="">Select product family…</option>
+                    {Object.entries(PRODUCT_FAMILIES).map(([code, label]) => (
+                      <option key={code} value={code}>{label} ({code})</option>
+                    ))}
+                  </select>
+                  {regenError && (
+                    <p className="text-xs mb-2" style={{ color: 'var(--status-not-comply)' }}>{regenError}</p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setRegenOpen(false)}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-medium"
+                      style={{ background: 'var(--surface-3)', color: 'var(--text-secondary)' }}
+                    >
+                      Cancel
+                    </button>
+                    <motion.button
+                      onClick={handleRegenerate}
+                      disabled={!regenFamily || regenLoading}
+                      whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                      className="flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5"
+                      style={{
+                        background: 'var(--brand-primary)',
+                        color: 'oklch(0.98 0.002 260)',
+                        opacity: !regenFamily || regenLoading ? 0.5 : 1,
+                      }}
+                    >
+                      {regenLoading ? <Loader size={10} className="animate-spin" /> : <RefreshCw size={10} />}
+                      {regenLoading ? 'Generating…' : 'Generate'}
+                    </motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <motion.button
             whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
             onClick={handleExport}

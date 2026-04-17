@@ -86,7 +86,9 @@ Rules:
 - Use the exact ROW_ID from the table — never invent or guess one.
 - Always include this tag whenever you recommend changing a row, even if the user didn't use the word "update".
 - Your explanation goes before the tag; the tag goes at the very end.
-- If suggesting updates to multiple rows, append one [UPDATE_ROW]...[/UPDATE_ROW] block per row.`
+- If suggesting updates to multiple rows, append one [UPDATE_ROW]...[/UPDATE_ROW] block per row.
+
+CRITICAL — DO NOT output compliance tables as plain text in the chat. Never reproduce the full table or a new table as a text response. If the entire report needs to be regenerated for a different product, tell the user to use the "Regenerate" button in the report header and select the correct product family. Only use [UPDATE_ROW] blocks for individual row corrections.`
 
   // Save user message
   await supabase.from('chat_messages').insert({

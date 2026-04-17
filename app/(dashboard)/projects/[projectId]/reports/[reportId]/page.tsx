@@ -56,6 +56,7 @@ export default async function ReportPage({
         status: typedReport.status,
         summary: typedReport.summary,
         specText: typedReport.spec_text,
+        specDocumentId: (typedReport as unknown as Record<string, unknown>).spec_document_id as string | null ?? null,
         createdAt: typedReport.created_at,
         updatedAt: typedReport.updated_at,
         generationMetadata: typedReport.generation_metadata,
