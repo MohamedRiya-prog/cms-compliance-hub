@@ -7,6 +7,8 @@ import { motion } from 'framer-motion'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader, X } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface ComplianceRow {
   id: string
@@ -416,14 +418,29 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
             </div>
 
             {docPreview ? (
-              /* ── Spec document text viewer ── */
-              <div className="flex-1 overflow-auto p-5">
-                <pre
-                  className="whitespace-pre-wrap text-xs leading-relaxed"
-                  style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}
-                >
-                  {docPreview.text || '(No text extracted from this document)'}
-                </pre>
+              /* ── Spec document markdown viewer ── */
+              <div className="flex-1 overflow-auto px-8 py-6 prose-products">
+                {docPreview.text
+                  ? <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        table: ({ children }) => (
+                          <div className="table-outer"><table>{children}</table></div>
+                        ),
+                        // Render unrecognised blocks as preformatted so raw spec
+                        // sections (numbered clauses, indented lists) still look clean
+                        code: ({ children }) => (
+                          <pre className="whitespace-pre-wrap text-xs leading-relaxed rounded-lg p-3"
+                            style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
+                            {children}
+                          </pre>
+                        ),
+                      }}
+                    >
+                      {docPreview.text}
+                    </ReactMarkdown>
+                  : <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No text extracted from this document.</p>
+                }
               </div>
             ) : sortedReports.length === 0 ? (
               <div className="flex-1 flex items-center justify-center">
