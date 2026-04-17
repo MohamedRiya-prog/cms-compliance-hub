@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderOpen, Settings, ChevronLeft, ChevronRight,
-  LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon,
+  LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon, BarChart2,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -22,6 +22,10 @@ const settingsItems = [
   { href: '/settings/products',  label: 'Products',   icon: Package,    adminOnly: false },
   { href: '/settings/rules',     label: 'Rules',      icon: BookOpen,   adminOnly: true  },
   { href: '/settings/companies', label: 'Companies',  icon: Building2,  adminOnly: true  },
+]
+
+const adminNavItems = [
+  { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
 ]
 
 interface SidebarProps {
@@ -139,6 +143,69 @@ function NavLinks({
           </Link>
         )
       })}
+
+      {/* Admin section */}
+      {isAdmin && (
+        <>
+          <div className="pt-4 pb-1">
+            <AnimatePresence>
+              {!compact && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="px-2.5 text-xs font-medium uppercase tracking-wider mb-1"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Admin
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+          {adminNavItems.map(item => {
+            const Icon = item.icon
+            const active = pathname.startsWith(item.href)
+            return (
+              <Link key={item.href} href={item.href} onClick={onNavigate}>
+                <motion.div
+                  whileHover={{ x: compact ? 0 : 2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className={cn(
+                    'flex items-center gap-3 px-2.5 py-2 rounded-lg text-sm transition-all relative',
+                    active ? 'font-medium' : 'hover:bg-[var(--surface-2)]'
+                  )}
+                  style={{
+                    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    background: active ? 'var(--surface-3)' : 'transparent',
+                  }}
+                >
+                  <Icon size={16} className="shrink-0" />
+                  <AnimatePresence>
+                    {!compact && (
+                      <motion.span
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="whitespace-nowrap"
+                      >
+                        {item.label}
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                  {active && (
+                    <motion.div
+                      layoutId="activeIndicator"
+                      className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full"
+                      style={{ background: 'var(--brand-primary)' }}
+                    />
+                  )}
+                </motion.div>
+              </Link>
+            )
+          })}
+        </>
+      )}
     </nav>
   )
 }
