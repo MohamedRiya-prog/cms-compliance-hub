@@ -6,11 +6,19 @@ import { usePathname, useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderOpen, Settings, ChevronLeft, ChevronRight,
-  LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon, BarChart2,
+  LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon, BarChart2, Users,
+  ChevronDown, Shield, Wrench, ClipboardCheck,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/components/theme-provider'
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface TeamMember {
+  id: string
+  name: string
+  role: string
+}
 
 const navItems = [
   { href: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -26,12 +34,15 @@ const settingsItems = [
 
 const adminNavItems = [
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
+  { href: '/admin/users',     label: 'Users',     icon: Users },
 ]
 
 interface SidebarProps {
+  userId?: string
   userEmail?: string
   userName?: string
   userRole?: string
+  teamMembers?: TeamMember[]
 }
 
 // ── Shared nav link renderer ────────────────────────────────────────────────
@@ -210,6 +221,185 @@ function NavLinks({
   )
 }
 
+// ── Role config ─────────────────────────────────────────────────────────────
+const ROLE_META: Record<string, { icon: React.ElementType; color: string; label: string }> = {
+  admin:       { icon: Shield,        color: 'oklch(0.65 0.18 270)', label: 'Admin' },
+  engineer:    { icon: Wrench,        color: 'oklch(0.78 0.16 85)',  label: 'Engineer' },
+  coordinator: { icon: ClipboardCheck, color: 'oklch(0.72 0.19 155)', label: 'Coordinator' },
+}
+
+// ── Team presence panel ──────────────────────────────────────────────────────
+function TeamPanel({
+  userId,
+  userName,
+  userRole,
+  teamMembers,
+}: {
+  userId: string
+  userName: string
+  userRole: string
+  teamMembers: TeamMember[]
+}) {
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set())
+  const [open, setOpen] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase.channel('team-presence', {
+      config: { presence: { key: userId } },
+    })
+
+    type PresencePayload = { userId: string }
+
+    function extractIds(state: ReturnType<typeof channel.presenceState>) {
+      return new Set(
+        Object.values(state).flat().map(p => (p as unknown as PresencePayload).userId)
+      )
+    }
+
+    channel
+      // Full state rebuild on any change
+      .on('presence', { event: 'sync' }, () => {
+        setOnlineIds(extractIds(channel.presenceState()))
+      })
+      // Someone joined — add them immediately
+      .on('presence', { event: 'join' }, ({ newPresences }) => {
+        const joined = (newPresences as unknown as PresencePayload[]).map(p => p.userId)
+        setOnlineIds(prev => new Set([...prev, ...joined]))
+      })
+      // Someone left — remove them immediately
+      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        const left = new Set((leftPresences as unknown as PresencePayload[]).map(p => p.userId))
+        setOnlineIds(prev => new Set([...prev].filter(id => !left.has(id))))
+      })
+      .subscribe(async status => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ userId, name: userName, role: userRole })
+          // Mark ourselves online immediately — don't wait for the sync round-trip
+          setOnlineIds(prev => new Set([...prev, userId]))
+        }
+      })
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userId, userName, userRole])
+
+  const onlineCount = teamMembers.filter(m => onlineIds.has(m.id)).length
+
+  // Group: sort by role priority then online-first
+  const groups: Array<{ key: string; label: string; members: TeamMember[] }> = [
+    { key: 'engineer',    label: 'Engineers',    members: teamMembers.filter(m => m.role === 'engineer') },
+    { key: 'coordinator', label: 'Coordinators', members: teamMembers.filter(m => m.role === 'coordinator') },
+    { key: 'admin',       label: 'Admins',       members: teamMembers.filter(m => m.role === 'admin') },
+  ].filter(g => g.members.length > 0)
+
+  return (
+    <div className="border-t shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+      {/* Header */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-[var(--surface-2)] transition-colors"
+      >
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+            Team
+          </span>
+          <span
+            className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+            style={{ background: 'oklch(0.72 0.19 155 / 0.15)', color: 'oklch(0.72 0.19 155)' }}
+          >
+            {onlineCount} online
+          </span>
+        </div>
+        <ChevronDown
+          size={12}
+          style={{
+            color: 'var(--text-muted)',
+            transform: open ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'transform 0.2s',
+          }}
+        />
+      </button>
+
+      {/* Member list */}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="pb-1 max-h-52 overflow-y-auto">
+              {groups.map(group => {
+                const onlineInGroup = group.members.filter(m => onlineIds.has(m.id))
+                const offlineInGroup = group.members.filter(m => !onlineIds.has(m.id))
+                const meta = ROLE_META[group.key] ?? ROLE_META.coordinator
+                const RoleIcon = meta.icon
+
+                return (
+                  <div key={group.key}>
+                    {/* Group label */}
+                    <div className="flex items-center gap-1.5 px-3 pt-2 pb-1">
+                      <RoleIcon size={9} style={{ color: meta.color }} />
+                      <span className="text-[9px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                        {group.label} — {onlineInGroup.length}/{group.members.length}
+                      </span>
+                    </div>
+
+                    {/* Online members first */}
+                    {onlineInGroup.map(m => (
+                      <MemberRow key={m.id} member={m} online isMe={m.id === userId} roleColor={meta.color} />
+                    ))}
+                    {/* Offline members */}
+                    {offlineInGroup.map(m => (
+                      <MemberRow key={m.id} member={m} online={false} isMe={m.id === userId} roleColor={meta.color} />
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+function MemberRow({ member, online, isMe, roleColor }: { member: TeamMember; online: boolean; isMe: boolean; roleColor: string }) {
+  return (
+    <div
+      className="flex items-center gap-2 px-3 py-1 mx-1 rounded-lg"
+      style={{ opacity: online ? 1 : 0.45 }}
+      title={`${member.name}${isMe ? ' (you)' : ''} · ${member.role}`}
+    >
+      {/* Avatar */}
+      <div className="relative shrink-0">
+        <div
+          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold"
+          style={{ background: `${roleColor.replace(')', ' / 0.18)')}`, color: roleColor }}
+        >
+          {member.name[0]?.toUpperCase() ?? '?'}
+        </div>
+        {/* Online dot */}
+        <span
+          className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border"
+          style={{
+            background: online ? 'oklch(0.72 0.19 155)' : 'var(--surface-3)',
+            borderColor: 'var(--surface-1)',
+          }}
+        />
+      </div>
+
+      {/* Name */}
+      <span className="text-xs truncate flex-1 min-w-0" style={{ color: online ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+        {member.name}
+        {isMe && <span className="ml-1 text-[9px]" style={{ color: 'var(--text-muted)' }}>(you)</span>}
+      </span>
+    </div>
+  )
+}
+
 // ── Logo mark ───────────────────────────────────────────────────────────────
 function LogoMark() {
   return (
@@ -223,7 +413,7 @@ function LogoMark() {
 }
 
 // ── Main component ───────────────────────────────────────────────────────────
-export function Sidebar({ userEmail, userName, userRole }: SidebarProps) {
+export function Sidebar({ userId, userEmail, userName, userRole, teamMembers = [] }: SidebarProps) {
   const isAdmin = userRole === 'admin'
   const [collapsed, setCollapsed]   = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -322,6 +512,26 @@ export function Sidebar({ userEmail, userName, userRole }: SidebarProps) {
           </div>
 
           <NavLinks isAdmin={isAdmin} pathname={pathname} compact={collapsed} />
+
+          {/* Team presence — hidden when sidebar is collapsed */}
+          <AnimatePresence>
+            {!collapsed && userId && teamMembers.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+              >
+                <TeamPanel
+                  userId={userId}
+                  userName={userName ?? userEmail ?? 'Me'}
+                  userRole={userRole ?? 'coordinator'}
+                  teamMembers={teamMembers}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {userFooter(collapsed)}
 
           {/* Collapse toggle */}
@@ -392,6 +602,14 @@ export function Sidebar({ userEmail, userName, userRole }: SidebarProps) {
               </div>
 
               <NavLinks isAdmin={isAdmin} pathname={pathname} compact={false} onNavigate={() => setMobileOpen(false)} />
+              {userId && teamMembers.length > 0 && (
+                <TeamPanel
+                  userId={userId}
+                  userName={userName ?? userEmail ?? 'Me'}
+                  userRole={userRole ?? 'coordinator'}
+                  teamMembers={teamMembers}
+                />
+              )}
               {userFooter(false)}
             </motion.aside>
           </>

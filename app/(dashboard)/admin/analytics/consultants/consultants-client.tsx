@@ -70,38 +70,17 @@ function highlight(text: string, query: string) {
 
 export function ConsultantsClient({ consultants }: Props) {
   const [consultantSearch, setConsultantSearch] = useState('')
-  const [projectSearch, setProjectSearch] = useState('')
+  const [projectSearches, setProjectSearches] = useState<Map<string, string>>(new Map())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [pages, setPages] = useState<Map<string, number>>(new Map())
 
   const cq = consultantSearch.trim().toLowerCase()
-  const pq = projectSearch.trim().toLowerCase()
 
-  // Filter consultants + scope project lists based on independent search terms
+  // Filter consultant cards by consultant name only
   const filtered = useMemo(() => {
-    return consultants
-      .map(c => {
-        // Consultant name filter
-        if (cq && !c.consultant.toLowerCase().includes(cq)) return null
-
-        // Project filter — if active, scope the visible project list
-        const matchedProjects = pq
-          ? c.projectDetails.filter(p => p.projectName.toLowerCase().includes(pq))
-          : null
-
-        // If project search is active but no projects match, hide this consultant
-        if (pq && matchedProjects!.length === 0) return null
-
-        return { ...c, matchedProjects }
-      })
-      .filter(Boolean) as (ConsultantStat & { matchedProjects: null | ProjectDetail[] })[]
-  }, [cq, pq, consultants])
-
-  // Auto-expand when project search is active
-  const autoExpanded = useMemo(() => {
-    if (!pq) return new Set<string>()
-    return new Set(filtered.map(c => c.consultant))
-  }, [pq, filtered])
+    if (!cq) return consultants
+    return consultants.filter(c => c.consultant.toLowerCase().includes(cq))
+  }, [cq, consultants])
 
   function toggle(name: string) {
     setExpanded(prev => {
@@ -112,6 +91,15 @@ export function ConsultantsClient({ consultants }: Props) {
     })
   }
 
+  function getProjectSearch(name: string) {
+    return projectSearches.get(name) ?? ''
+  }
+
+  function setProjectSearch(name: string, value: string) {
+    setProjectSearches(prev => new Map(prev).set(name, value))
+    setPage(name, 0) // reset to page 1 on new search
+  }
+
   function getPage(name: string) {
     return pages.get(name) ?? 0
   }
@@ -120,8 +108,7 @@ export function ConsultantsClient({ consultants }: Props) {
     setPages(prev => new Map(prev).set(name, page))
   }
 
-  const isExpanded = (name: string) =>
-    expanded.has(name) || autoExpanded.has(name)
+  const isExpanded = (name: string) => expanded.has(name)
 
   // Summary stats
   const totalConsultants = consultants.length
@@ -150,51 +137,24 @@ export function ConsultantsClient({ consultants }: Props) {
         </div>
       </div>
 
-      {/* Search bars */}
-      <div className="grid grid-cols-2 gap-3 mb-4">
-        {/* Consultant search */}
-        <div>
-          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Consultant</p>
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-            <input
-              value={consultantSearch}
-              onChange={e => { setConsultantSearch(e.target.value); setExpanded(new Set()); setPages(new Map()) }}
-              placeholder="Filter by consultant…"
-              className="w-full pl-8 pr-8 py-2 rounded-lg text-sm outline-none"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
-            />
-            {consultantSearch && (
-              <button onClick={() => setConsultantSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
-                <X size={13} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Project search */}
-        <div>
-          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Project</p>
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
-            <input
-              value={projectSearch}
-              onChange={e => { setProjectSearch(e.target.value); setExpanded(new Set()); setPages(new Map()) }}
-              placeholder="Find project across consultants…"
-              className="w-full pl-8 pr-8 py-2 rounded-lg text-sm outline-none"
-              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
-            />
-            {projectSearch && (
-              <button onClick={() => setProjectSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
-                <X size={13} />
-              </button>
-            )}
-          </div>
-        </div>
+      {/* Consultant search */}
+      <div className="relative mb-4">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+        <input
+          value={consultantSearch}
+          onChange={e => { setConsultantSearch(e.target.value); setExpanded(new Set()); setPages(new Map()) }}
+          placeholder="Search consultant…"
+          className="w-full pl-8 pr-8 py-2.5 rounded-xl text-sm outline-none"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+        />
+        {consultantSearch && (
+          <button onClick={() => setConsultantSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
+            <X size={13} />
+          </button>
+        )}
       </div>
 
-      {/* Results count */}
-      {(cq || pq) && (
+      {cq && (
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
           {filtered.length === 0 ? 'No results' : `${filtered.length} consultant${filtered.length !== 1 ? 's' : ''} matched`}
         </p>
@@ -212,14 +172,17 @@ export function ConsultantsClient({ consultants }: Props) {
         <div className="py-16 text-center">
           <Search size={28} className="mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            No results for{cq ? ` consultant "${consultantSearch}"` : ''}{pq ? ` project "${projectSearch}"` : ''}
+            No results for{cq ? ` "${consultantSearch}"` : ''}
           </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((c, rank) => {
             const open = isExpanded(c.consultant)
-            const visibleProjects = c.matchedProjects ?? c.projectDetails
+            const pq = getProjectSearch(c.consultant).trim().toLowerCase()
+            const visibleProjects = pq
+              ? c.projectDetails.filter(p => p.projectName.toLowerCase().includes(pq))
+              : c.projectDetails
             const page = getPage(c.consultant)
             const totalPages = Math.ceil(visibleProjects.length / PAGE_SIZE)
             const pageProjects = visibleProjects.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
@@ -327,6 +290,28 @@ export function ConsultantsClient({ consultants }: Props) {
                         className="border-t"
                         style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}
                       >
+                        {/* Per-consultant project search */}
+                        <div className="relative px-5 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                          <Search size={12} className="absolute left-8 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+                          <input
+                            value={getProjectSearch(c.consultant)}
+                            onChange={e => setProjectSearch(c.consultant, e.target.value)}
+                            placeholder="Search projects…"
+                            className="w-full pl-7 pr-7 py-1.5 rounded-lg text-xs outline-none"
+                            style={{ background: 'var(--surface-2)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
+                            onClick={e => e.stopPropagation()}
+                          />
+                          {getProjectSearch(c.consultant) && (
+                            <button
+                              onClick={e => { e.stopPropagation(); setProjectSearch(c.consultant, '') }}
+                              className="absolute right-8 top-1/2 -translate-y-1/2"
+                              style={{ color: 'var(--text-muted)' }}
+                            >
+                              <X size={12} />
+                            </button>
+                          )}
+                        </div>
+
                         {/* Column headers */}
                         <div
                           className="grid text-xs font-medium px-5 py-2 border-b"
@@ -342,6 +327,13 @@ export function ConsultantsClient({ consultants }: Props) {
                           <span className="pl-2">Compliance</span>
                           <span className="text-right">Last Activity</span>
                         </div>
+
+                        {/* Empty state for project search */}
+                        {visibleProjects.length === 0 && (
+                          <div className="py-8 text-center">
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No projects match &ldquo;{getProjectSearch(c.consultant)}&rdquo;</p>
+                          </div>
+                        )}
 
                         {/* Project rows */}
                         {pageProjects.map(p => (

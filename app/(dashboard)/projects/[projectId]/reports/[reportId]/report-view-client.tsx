@@ -7,7 +7,8 @@ import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import {
   ArrowLeft, Download, CheckCircle, MessageSquare, Filter,
-  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw, Trash2
+  ChevronDown, Edit2, Check, X, Send, Loader, RotateCcw, RefreshCw, Trash2,
+  ShieldCheck, ClipboardCheck, AlertTriangle, Clock,
 } from 'lucide-react'
 import { cn, formatStatus, getStatusBgClass, formatDate } from '@/lib/utils'
 
@@ -35,6 +36,7 @@ interface Report {
   createdAt: string
   updatedAt: string
   generationMetadata: Record<string, unknown> | null
+  verificationNote: string | null
 }
 
 const BUILTIN_FAMILIES: Record<string, string> = {
@@ -64,6 +66,7 @@ interface Props {
   project: { id: string; name: string }
   initialRows: Row[]
   isAdmin?: boolean
+  userRole?: 'admin' | 'coordinator' | 'engineer'
 }
 
 type FilterStatus = 'all' | 'comply' | 'not_comply' | 'noted' | 'not_part_of_proposal' | 'header'
@@ -114,7 +117,8 @@ interface RowUpdate {
   remark: string
 }
 
-export function ReportViewClient({ report, project, initialRows, isAdmin }: Props) {
+export function ReportViewClient({ report, project, initialRows, isAdmin, userRole }: Props) {
+  const role = userRole ?? 'engineer'
   const [rows, setRows] = useState<Row[]>(initialRows)
   const [filter, setFilter] = useState<FilterStatus>('all')
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: string } | null>(null)
@@ -129,8 +133,13 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
   const [revisionDialogOpen, setRevisionDialogOpen] = useState(false)
   const [reportSummary, setReportSummary] = useState(report.summary)
   const [reportStatus, setReportStatus] = useState(report.status)
+  const [verificationNote, setVerificationNote] = useState(report.verificationNote)
   const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
   const [approving, setApproving] = useState(false)
+  const [verifying, setVerifying] = useState(false)
+  const [requestChangesOpen, setRequestChangesOpen] = useState(false)
+  const [requestChangesNote, setRequestChangesNote] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [regenOpen, setRegenOpen] = useState(false)
   const [regenFamily, setRegenFamily] = useState('')
@@ -199,8 +208,14 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
 
   async function handleExport() {
     setExporting(true)
+    setExportError('')
     try {
       const res = await fetch(`/api/compliance/export?reportId=${report.id}`)
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setExportError(data.error ?? 'Export failed')
+        return
+      }
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -236,6 +251,47 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
     })
     if (res.ok) setReportStatus('approved')
     setApproving(false)
+  }
+
+  async function handleSendForVerification() {
+    setApproving(true)
+    const res = await fetch(`/api/compliance/${report.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'pending_verification' }),
+    })
+    if (res.ok) {
+      setReportStatus('pending_verification')
+      setVerificationNote(null)
+    }
+    setApproving(false)
+  }
+
+  async function handleVerify() {
+    setVerifying(true)
+    const res = await fetch(`/api/compliance/${report.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'verify' }),
+    })
+    if (res.ok) setReportStatus('verified')
+    setVerifying(false)
+  }
+
+  async function handleRequestChanges() {
+    setVerifying(true)
+    const res = await fetch(`/api/compliance/${report.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'request_changes', note: requestChangesNote }),
+    })
+    if (res.ok) {
+      setReportStatus('needs_revision')
+      setVerificationNote(requestChangesNote)
+      setRequestChangesOpen(false)
+      setRequestChangesNote('')
+    }
+    setVerifying(false)
   }
 
   async function handleRegenerate() {
@@ -419,16 +475,21 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
             <h1 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
               {report.title}
             </h1>
-            <span
-              className="text-xs px-2 py-0.5 rounded-full border capitalize"
-              style={{
-                color: reportStatus === 'approved' ? 'var(--status-comply)' : reportStatus === 'review' ? 'var(--status-noted)' : 'var(--text-muted)',
-                borderColor: reportStatus === 'approved' ? 'oklch(0.72 0.19 155 / 0.4)' : reportStatus === 'review' ? 'oklch(0.78 0.16 85 / 0.4)' : 'var(--border-subtle)',
-                background: reportStatus === 'approved' ? STATUS_BG.comply : reportStatus === 'review' ? STATUS_BG.noted : 'var(--surface-2)',
-              }}
-            >
-              {reportStatus}
-            </span>
+            {(() => {
+              const badge: Record<string, { color: string; border: string; bg: string; label: string }> = {
+                review:               { color: 'var(--status-noted)',      border: 'oklch(0.78 0.16 85 / 0.4)',  bg: STATUS_BG.noted,    label: 'In Review' },
+                pending_verification: { color: 'var(--brand-primary)',     border: 'oklch(0.65 0.18 270 / 0.4)', bg: 'oklch(0.65 0.18 270 / 0.08)', label: 'Awaiting Verification' },
+                needs_revision:       { color: 'var(--status-not-comply)', border: 'oklch(0.68 0.22 25 / 0.4)',  bg: STATUS_BG.not_comply, label: 'Needs Revision' },
+                verified:             { color: 'var(--status-comply)',     border: 'oklch(0.72 0.19 155 / 0.4)', bg: STATUS_BG.comply,   label: 'Verified' },
+                approved:             { color: 'var(--status-comply)',     border: 'oklch(0.72 0.19 155 / 0.4)', bg: STATUS_BG.comply,   label: 'Approved' },
+              }
+              const s = badge[reportStatus] ?? { color: 'var(--text-muted)', border: 'var(--border-subtle)', bg: 'var(--surface-2)', label: reportStatus }
+              return (
+                <span className="text-xs px-2 py-0.5 rounded-full border" style={{ color: s.color, borderColor: s.border, background: s.bg }}>
+                  {s.label}
+                </span>
+              )
+            })()}
           </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {project.name} · {report.productFamily}
@@ -521,7 +582,29 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
             </AnimatePresence>
           </div>
 
-          {reportStatus === 'review' && (
+          {/* ── Role-based action buttons ── */}
+
+          {/* Coordinator: send for verification */}
+          {(role === 'coordinator' || (role === 'engineer' && reportStatus === 'review')) && reportStatus === 'review' && (
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={handleSendForVerification}
+              disabled={approving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              style={{
+                background: 'oklch(0.65 0.18 270 / 0.10)',
+                color: 'var(--brand-primary)',
+                borderColor: 'oklch(0.65 0.18 270 / 0.35)',
+                opacity: approving ? 0.6 : 1,
+              }}
+            >
+              {approving ? <Loader size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
+              Send for Verification
+            </motion.button>
+          )}
+
+          {/* Admin: direct approve */}
+          {isAdmin && reportStatus === 'review' && (
             <motion.button
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
               onClick={handleApprove}
@@ -539,16 +622,103 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
             </motion.button>
           )}
 
-          <motion.button
-            whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
-            style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
-          >
-            {exporting ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
-            Export
-          </motion.button>
+          {/* Coordinator: re-submit after revision */}
+          {role === 'coordinator' && reportStatus === 'needs_revision' && (
+            <motion.button
+              whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+              onClick={handleSendForVerification}
+              disabled={approving}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+              style={{
+                background: 'oklch(0.65 0.18 270 / 0.10)',
+                color: 'var(--brand-primary)',
+                borderColor: 'oklch(0.65 0.18 270 / 0.35)',
+                opacity: approving ? 0.6 : 1,
+              }}
+            >
+              {approving ? <Loader size={12} className="animate-spin" /> : <ClipboardCheck size={12} />}
+              Re-submit for Verification
+            </motion.button>
+          )}
+
+          {/* Engineer / Admin: verify or request changes */}
+          {(role === 'engineer' || isAdmin) && reportStatus === 'pending_verification' && (
+            <>
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                onClick={handleVerify}
+                disabled={verifying}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+                style={{
+                  background: 'oklch(0.72 0.19 155 / 0.12)',
+                  color: 'var(--status-comply)',
+                  borderColor: 'oklch(0.72 0.19 155 / 0.35)',
+                  opacity: verifying ? 0.6 : 1,
+                }}
+              >
+                {verifying ? <Loader size={12} className="animate-spin" /> : <ShieldCheck size={12} />}
+                Verify
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                onClick={() => setRequestChangesOpen(true)}
+                disabled={verifying}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border"
+                style={{
+                  background: 'oklch(0.68 0.22 25 / 0.08)',
+                  color: 'var(--status-not-comply)',
+                  borderColor: 'oklch(0.68 0.22 25 / 0.35)',
+                  opacity: verifying ? 0.6 : 1,
+                }}
+              >
+                <AlertTriangle size={12} />
+                Request Changes
+              </motion.button>
+            </>
+          )}
+
+          {/* Awaiting verification indicator for coordinators */}
+          {role === 'coordinator' && reportStatus === 'pending_verification' && (
+            <span
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+              style={{ background: 'oklch(0.65 0.18 270 / 0.06)', color: 'var(--brand-primary)', borderColor: 'oklch(0.65 0.18 270 / 0.25)' }}
+            >
+              <Clock size={12} className="animate-pulse" />
+              Awaiting Verification
+            </span>
+          )}
+
+          {/* Export button — gated for coordinators */}
+          {(() => {
+            const canExport = role !== 'coordinator' || ['verified', 'approved'].includes(reportStatus)
+            return (
+              <div className="relative">
+                <motion.button
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                  onClick={canExport ? handleExport : undefined}
+                  disabled={exporting || !canExport}
+                  title={!canExport ? 'Report must be verified before export' : undefined}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border"
+                  style={{
+                    background: 'var(--surface-2)',
+                    color: canExport ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    borderColor: 'var(--border-default)',
+                    opacity: !canExport ? 0.5 : 1,
+                    cursor: !canExport ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {exporting ? <Loader size={12} className="animate-spin" /> : <Download size={12} />}
+                  Export
+                </motion.button>
+                {exportError && (
+                  <p className="absolute top-9 right-0 text-xs whitespace-nowrap px-2 py-1 rounded-lg z-10"
+                    style={{ background: 'var(--surface-2)', color: 'var(--status-not-comply)', border: '1px solid var(--border-default)' }}>
+                    {exportError}
+                  </p>
+                )}
+              </div>
+            )
+          })()}
           <button
             onClick={handleDeleteReport}
             disabled={deleting}
@@ -573,6 +743,20 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
           </button>
         </div>
       </div>
+
+      {/* Verification note banner */}
+      {reportStatus === 'needs_revision' && verificationNote && (
+        <div
+          className="flex items-start gap-3 px-5 py-3 border-b shrink-0"
+          style={{ background: 'oklch(0.68 0.22 25 / 0.07)', borderColor: 'oklch(0.68 0.22 25 / 0.25)' }}
+        >
+          <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: 'var(--status-not-comply)' }} />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold mb-0.5" style={{ color: 'var(--status-not-comply)' }}>Changes Requested by Engineer</p>
+            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>{verificationNote}</p>
+          </div>
+        </div>
+      )}
 
       {/* Body — resizable split */}
       <div className="flex flex-1 overflow-hidden">
@@ -1073,6 +1257,74 @@ export function ReportViewClient({ report, project, initialRows, isAdmin }: Prop
               >
                 Cancel
               </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+    {/* ── Request Changes dialog ──────────────────────────────────────────── */}
+    <AnimatePresence>
+      {requestChangesOpen && (
+        <>
+          <motion.div
+            className="fixed inset-0 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            style={{ background: 'oklch(0 0 0 / 0.45)' }}
+            onClick={() => setRequestChangesOpen(false)}
+          />
+          <motion.div
+            className="fixed z-50 inset-0 flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl p-6"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                Request Changes
+              </h2>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                Describe what needs to be revised. The coordinator will see this note.
+              </p>
+              <textarea
+                value={requestChangesNote}
+                onChange={e => setRequestChangesNote(e.target.value)}
+                placeholder="e.g. Clause 3.4 response does not match our product spec…"
+                rows={4}
+                className="w-full text-xs p-3 rounded-xl resize-none outline-none mb-4"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+                autoFocus
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setRequestChangesOpen(false); setRequestChangesNote('') }}
+                  className="flex-1 py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--surface-3)]"
+                  style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)' }}
+                >
+                  Cancel
+                </button>
+                <motion.button
+                  onClick={handleRequestChanges}
+                  disabled={verifying || !requestChangesNote.trim()}
+                  whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                  className="flex-1 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5"
+                  style={{
+                    background: 'oklch(0.68 0.22 25 / 0.15)',
+                    color: 'var(--status-not-comply)',
+                    border: '1px solid oklch(0.68 0.22 25 / 0.35)',
+                    opacity: verifying || !requestChangesNote.trim() ? 0.5 : 1,
+                  }}
+                >
+                  {verifying ? <Loader size={10} className="animate-spin" /> : <AlertTriangle size={10} />}
+                  {verifying ? 'Sending…' : 'Request Changes'}
+                </motion.button>
+              </div>
             </div>
           </motion.div>
         </>

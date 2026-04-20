@@ -18,10 +18,12 @@ export async function getAuthContext() {
     .eq('id', user.id)
     .single()
 
-  const isAdmin = profile?.role === 'admin'
+  const role = (profile?.role ?? 'coordinator') as 'admin' | 'coordinator' | 'engineer'
+  const isAdmin = role === 'admin'
 
   return {
     user,
+    role,
     isAdmin,
     // Use this for all data queries — bypasses RLS only when confirmed admin
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

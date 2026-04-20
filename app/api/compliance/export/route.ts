@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { getAuthContext } from '@/lib/auth'
 import ExcelJS from 'exceljs'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -117,9 +118,9 @@ function addReportSheet(
 
 // ── Project-level export (all reports, one sheet each + summary) ─────────────
 async function exportProject(req: NextRequest, projectId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { user, role, supabase } = ctx
 
   const { data: project } = await supabase
     .from('projects')
@@ -130,11 +131,16 @@ async function exportProject(req: NextRequest, projectId: string) {
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
+  // Coordinators can only export verified or admin-approved reports
+  const statusFilter = role === 'coordinator'
+    ? '("generating","error","review","pending_verification","needs_revision")'
+    : '("generating","error")'
+
   const { data: allReports } = await supabase
     .from('compliance_reports')
     .select(`id, title, product_family, revision, summary, compliance_rows(*)`)
     .eq('project_id', projectId)
-    .not('status', 'in', '("generating","error")')
+    .not('status', 'in', statusFilter)
     .order('revision', { ascending: true })
 
   if (!allReports || allReports.length === 0) {
@@ -261,9 +267,9 @@ async function exportProject(req: NextRequest, projectId: string) {
 
 // ── Single-report export (existing behaviour) ────────────────────────────────
 async function exportReport(req: NextRequest, reportId: string) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { user, role, isAdmin, supabase } = ctx
 
   const { data: report } = await supabase
     .from('compliance_reports')
@@ -271,9 +277,17 @@ async function exportReport(req: NextRequest, reportId: string) {
     .eq('id', reportId)
     .single()
 
-  const r = report as unknown as ReportWithRows & { projects: { user_id: string; name: string } }
-  if (!r || r.projects?.user_id !== user.id) {
+  const r = report as unknown as ReportWithRows & { status: string; projects: { user_id: string; name: string } }
+  if (!r || (!isAdmin && r.projects?.user_id !== user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  // Coordinators can only download verified or admin-approved reports
+  if (role === 'coordinator' && !['verified', 'approved'].includes(r.status)) {
+    return NextResponse.json(
+      { error: 'This report must be verified by a Technical Engineer before it can be exported.' },
+      { status: 403 }
+    )
   }
 
   const workbook = new ExcelJS.Workbook()

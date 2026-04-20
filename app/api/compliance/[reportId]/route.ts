@@ -3,8 +3,9 @@ import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 
 const updateSchema = z.object({
-  status: z.enum(['generating', 'review', 'approved', 'exported']).optional(),
+  status: z.enum(['generating', 'review', 'pending_verification', 'verified', 'needs_revision', 'approved', 'exported']).optional(),
   title: z.string().optional(),
+  verificationNote: z.string().nullable().optional(),
 })
 
 export async function GET(
@@ -43,20 +44,35 @@ export async function PATCH(
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
+  const { role } = ctx
+
   const { data: report } = await db
     .from('compliance_reports')
-    .select('id, projects!inner(user_id)')
+    .select('id, status, projects!inner(user_id)')
     .eq('id', reportId)
     .single()
 
-  const typed = report as unknown as { id: string; projects: { user_id: string } }
+  const typed = report as unknown as { id: string; status: string; projects: { user_id: string } }
   if (!typed || (!isAdmin && typed.projects?.user_id !== user.id)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
+  // Coordinators can only send for verification (review → pending_verification)
+  // or re-submit after revision (needs_revision → pending_verification)
+  if (role === 'coordinator' && parsed.data.status && parsed.data.status !== 'pending_verification') {
+    return NextResponse.json({ error: 'Coordinators can only submit for verification' }, { status: 403 })
+  }
+
+  const { verificationNote, ...rest } = parsed.data
+  const updatePayload: Record<string, unknown> = {
+    ...rest,
+    updated_at: new Date().toISOString(),
+  }
+  if (verificationNote !== undefined) updatePayload.verification_note = verificationNote
+
   const { data, error } = await db
     .from('compliance_reports')
-    .update({ ...parsed.data, updated_at: new Date().toISOString() })
+    .update(updatePayload)
     .eq('id', reportId)
     .select()
     .single()

@@ -46,7 +46,7 @@ export function ProfileClient({ user, profile }: Props) {
             <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{name || 'No name set'}</p>
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{user.email}</p>
             <span className="text-xs px-2 py-0.5 rounded-full mt-1 inline-block capitalize" style={{ background: 'oklch(0.65 0.18 270 / 0.15)', color: 'var(--brand-primary)' }}>
-              {profile?.role ?? 'engineer'}
+              {profile?.role ?? 'coordinator'}
             </span>
           </div>
         </div>

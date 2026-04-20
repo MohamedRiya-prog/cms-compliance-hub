@@ -18,9 +18,11 @@ export default async function ReportPage({
     .select('role')
     .eq('id', user.id)
     .single()
-  const isAdmin = profile?.role === 'admin'
+  const role = (profile?.role ?? 'coordinator') as 'admin' | 'coordinator' | 'engineer'
+  const isAdmin = role === 'admin'
 
-  const db = isAdmin ? createAdminClient() : supabase
+  // Engineers can see all reports (including pending_verification from other projects)
+  const db = (isAdmin || role === 'engineer') ? createAdminClient() : supabase
 
   const { data: report } = await db
     .from('compliance_reports')
@@ -41,6 +43,7 @@ export default async function ReportPage({
     created_at: string
     updated_at: string
     generation_metadata: Record<string, unknown> | null
+    verification_note: string | null
     projects: { id: string; name: string; user_id: string }
     compliance_rows: Array<{
       id: string; sort_order: number; clause: string; requirement: string;
@@ -49,7 +52,8 @@ export default async function ReportPage({
     }>
   }
 
-  if (!typedReport || (!isAdmin && typedReport.projects?.user_id !== user.id)) {
+  // Admins and engineers see all reports; others only see their own project's reports
+  if (!typedReport || (!isAdmin && role !== 'engineer' && typedReport.projects?.user_id !== user.id)) {
     notFound()
   }
 
@@ -69,10 +73,12 @@ export default async function ReportPage({
         createdAt: typedReport.created_at,
         updatedAt: typedReport.updated_at,
         generationMetadata: typedReport.generation_metadata,
+        verificationNote: typedReport.verification_note ?? null,
       }}
       project={{ id: typedReport.projects.id, name: typedReport.projects.name }}
       initialRows={rows}
       isAdmin={isAdmin}
+      userRole={role}
     />
   )
 }
