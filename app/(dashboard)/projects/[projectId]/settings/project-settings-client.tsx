@@ -124,7 +124,7 @@ export function ProjectSettingsClient({ project }: { project: Project }) {
   } as React.CSSProperties
 
   return (
-    <div className="p-6 max-w-xl">
+    <div className="p-6 max-w-3xl">
       <Link href={`/projects/${project.id}`}>
         <button className="flex items-center gap-2 text-sm mb-6 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
           <ArrowLeft size={14} /> Back to Project
@@ -185,10 +185,12 @@ export function ProjectSettingsClient({ project }: { project: Project }) {
           </div>
         </div>
 
-        {/* Project Number */}
+        {/* Project Number — read-only */}
         <div>
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Project Number</label>
-          <input type="text" value={form.projectNumber} onChange={e => set('projectNumber', e.target.value)} style={inputStyle} />
+          <div className="px-3.5 py-2.5 rounded-lg text-sm font-mono" style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)', color: 'var(--brand-primary)' }}>
+            {form.projectNumber || '—'}
+          </div>
         </div>
 
         {/* Description */}
