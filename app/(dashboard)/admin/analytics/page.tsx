@@ -226,12 +226,90 @@ export default async function AdminAnalyticsPage() {
     })
     .sort((a, b) => b.reports - a.reports)
 
+  // ── Consultants ───────────────────────────────────────────────────────────
+  const reportConsultantMap = new Map(
+    reportsArr.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
+  )
+
+  type ProjectDetail = {
+    projectId: string; projectName: string; reports: number
+    totalClauses: number; comply: number; notComply: number; noted: number; lastActivity: string
+  }
+
+  const consultantMap = new Map<string, {
+    consultant: string; projectMap: Map<string, ProjectDetail>
+    reports: number; totalClauses: number; comply: number; notComply: number; noted: number
+    familyFails: Map<string, number>; lastActivity: string
+  }>()
+
+  for (const r of reportsArr) {
+    const cName = r.projects.consultant?.trim() || 'No Consultant'
+    if (!consultantMap.has(cName)) {
+      consultantMap.set(cName, {
+        consultant: cName, projectMap: new Map(),
+        reports: 0, totalClauses: 0, comply: 0, notComply: 0, noted: 0,
+        familyFails: new Map(), lastActivity: r.created_at,
+      })
+    }
+    const ce = consultantMap.get(cName)!
+    ce.reports++
+    ce.totalClauses += r.summary?.total    ?? 0
+    ce.comply       += r.summary?.comply   ?? 0
+    ce.notComply    += r.summary?.notComply ?? 0
+    ce.noted        += r.summary?.noted     ?? 0
+    if (r.created_at > ce.lastActivity) ce.lastActivity = r.created_at
+
+    const pid = r.projects.id
+    if (!ce.projectMap.has(pid)) {
+      ce.projectMap.set(pid, {
+        projectId: pid, projectName: r.projects.name,
+        reports: 0, totalClauses: 0, comply: 0, notComply: 0, noted: 0, lastActivity: r.created_at,
+      })
+    }
+    const pe = ce.projectMap.get(pid)!
+    pe.reports++
+    pe.totalClauses += r.summary?.total    ?? 0
+    pe.comply       += r.summary?.comply   ?? 0
+    pe.notComply    += r.summary?.notComply ?? 0
+    pe.noted        += r.summary?.noted     ?? 0
+    if (r.created_at > pe.lastActivity) pe.lastActivity = r.created_at
+  }
+
+  for (const row of rowsArr) {
+    const cName = reportConsultantMap.get(row.compliance_reports.id)
+    if (!cName) continue
+    const ce = consultantMap.get(cName)
+    if (!ce) continue
+    const fam = row.compliance_reports.product_family
+    ce.familyFails.set(fam, (ce.familyFails.get(fam) ?? 0) + 1)
+  }
+
+  const consultants = Array.from(consultantMap.values())
+    .map(c => ({
+      consultant: c.consultant,
+      projects: c.projectMap.size,
+      reports: c.reports,
+      totalClauses: c.totalClauses,
+      comply: c.comply,
+      notComply: c.notComply,
+      noted: c.noted,
+      complianceRate: c.totalClauses > 0 ? Math.round((c.comply / c.totalClauses) * 100) : 0,
+      topFailingFamilies: Array.from(c.familyFails.entries())
+        .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([f]) => f),
+      lastActivity: c.lastActivity,
+      projectDetails: Array.from(c.projectMap.values())
+        .map(p => ({ ...p, complianceRate: p.totalClauses > 0 ? Math.round((p.comply / p.totalClauses) * 100) : 0 }))
+        .sort((a, b) => b.complianceRate - a.complianceRate),
+    }))
+    .sort((a, b) => b.complianceRate - a.complianceRate)
+
   return (
     <AnalyticsClient
       overview={{ totalReports, totalClauses, avgComplianceRate, activeUsers }}
       products={products}
       gaps={gaps}
       users={users}
+      consultants={consultants}
       dailyCounts={dailyCounts}
     />
   )

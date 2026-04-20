@@ -6,8 +6,9 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList, Cell,
 } from 'recharts'
 import Link from 'next/link'
-import { FileText, CheckCircle, Users, Hash, X, ExternalLink } from 'lucide-react'
+import { FileText, CheckCircle, Users, Hash, X, ExternalLink, BarChart2, Building2 } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
+import { ConsultantsClient } from './consultants/consultants-client'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,8 +64,16 @@ interface Props {
   products: ProductStat[]
   gaps: GapItem[]
   users: UserStat[]
+  consultants: Parameters<typeof ConsultantsClient>[0]['consultants']
   dailyCounts: Record<string, number>
 }
+
+type Tab = 'overview' | 'consultants'
+
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: 'overview',     label: 'Overview',    icon: BarChart2  },
+  { id: 'consultants',  label: 'Consultants', icon: Building2  },
+]
 
 // ── Bar colours ──────────────────────────────────────────────────────────────
 
@@ -291,7 +300,8 @@ const sectionVariants = {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }: Props) {
+export function AnalyticsClient({ overview, products, gaps, users, consultants, dailyCounts }: Props) {
+  const [tab, setTab] = useState<Tab>('overview')
   // Default to the 3 lowest-rate families
   const defaultFamily = products[0]?.family ?? null
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
@@ -341,7 +351,55 @@ export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }
   ]
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+    <div className="flex flex-col h-full overflow-hidden">
+
+      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      <div
+        className="shrink-0 border-b px-6 pt-5 pb-4"
+        style={{ borderColor: 'var(--border-default)', background: 'var(--surface-0)' }}
+      >
+        <h1 className="text-2xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Analytics</h1>
+        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Platform-wide compliance insights</p>
+
+        <div
+          className="inline-flex items-center gap-0.5 p-1 rounded-xl"
+          style={{ background: 'var(--surface-2)' }}
+        >
+          {TABS.map(t => {
+            const active = tab === t.id
+            const Icon = t.icon
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)} className="relative">
+                {active && (
+                  <motion.div
+                    layoutId="analytics-active-tab"
+                    className="absolute inset-0 rounded-lg"
+                    style={{
+                      background: 'var(--surface-0)',
+                      boxShadow: '0 1px 4px oklch(0 0 0 / 0.12), 0 0 0 1px oklch(0 0 0 / 0.04)',
+                    }}
+                    transition={{ type: 'spring', bounce: 0.18, duration: 0.25 }}
+                  />
+                )}
+                <div
+                  className="relative flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium select-none transition-colors"
+                  style={{ color: active ? 'var(--text-primary)' : 'var(--text-muted)', zIndex: 1 }}
+                >
+                  <Icon size={13} />
+                  {t.label}
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── Tab content ──────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-y-auto">
+        {tab === 'consultants' ? (
+          <ConsultantsClient consultants={consultants} />
+        ) : (
+          <div className="p-4 md:p-6 max-w-7xl mx-auto">
 
       {/* ── Section 1: KPI cards ─────────────────────────────────────────── */}
       <motion.div
@@ -719,6 +777,9 @@ export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }
           </>
         )}
       </AnimatePresence>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
