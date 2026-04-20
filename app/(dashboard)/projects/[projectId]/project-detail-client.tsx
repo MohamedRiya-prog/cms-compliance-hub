@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader, X } from 'lucide-react'
+import { ArrowLeft, Upload, FileText, Trash2, ExternalLink, Download, Loader, X, Settings } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -395,15 +395,26 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
             </motion.button>
           </Link>
           {isAdmin && (
-            <button
-              onClick={() => setShowDeleteProjectModal(true)}
-              disabled={deleting}
-              className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
-              style={{ color: 'var(--text-muted)' }}
-              title="Delete project"
-            >
-              <Trash2 size={14} />
-            </button>
+            <>
+              <Link href={`/projects/${project.id}/settings`}>
+                <button
+                  className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+                  style={{ color: 'var(--text-muted)' }}
+                  title="Project settings"
+                >
+                  <Settings size={14} />
+                </button>
+              </Link>
+              <button
+                onClick={() => setShowDeleteProjectModal(true)}
+                disabled={deleting}
+                className="p-1.5 rounded-lg hover:bg-[var(--surface-2)] transition-colors"
+                style={{ color: 'var(--text-muted)' }}
+                title="Delete project"
+              >
+                <Trash2 size={14} />
+              </button>
+            </>
           )}
         </div>
       </div>
