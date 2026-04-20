@@ -6,7 +6,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LabelList, Cell,
 } from 'recharts'
 import Link from 'next/link'
-import { FileText, CheckCircle, Users, Hash, X, ExternalLink } from 'lucide-react'
+import { FileText, CheckCircle, Users, Hash, X, ExternalLink, ChevronDown, ChevronRight, Building2 } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -58,6 +58,18 @@ interface UserStat {
   lastActivity: string
 }
 
+interface ProjectDetail {
+  projectId: string
+  projectName: string
+  reports: number
+  totalClauses: number
+  comply: number
+  notComply: number
+  noted: number
+  complianceRate: number
+  lastActivity: string
+}
+
 interface ConsultantStat {
   consultant: string
   projects: number
@@ -69,6 +81,7 @@ interface ConsultantStat {
   complianceRate: number
   topFailingFamilies: string[]
   lastActivity: string
+  projectDetails: ProjectDetail[]
 }
 
 interface Props {
@@ -311,6 +324,16 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
   const [drawerGap, setDrawerGap] = useState<GapItem | null>(null)
   const [drawerPage, setDrawerPage] = useState(0)
+  const [expandedConsultants, setExpandedConsultants] = useState<Set<string>>(new Set())
+
+  function toggleConsultant(name: string) {
+    setExpandedConsultants(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
   const DRAWER_PAGE_SIZE = 8
 
   // Reset to page 0 whenever a new gap is opened
@@ -597,80 +620,68 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
             No consultant data yet — add consultants to your projects to see scores here.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                  {['#', 'Consultant', 'Projects', 'Reports', 'Compliance Rate', 'Top Failing Families'].map(h => (
-                    <th
-                      key={h}
-                      className="text-left pb-2 pr-4 font-medium"
-                      style={{ color: 'var(--text-muted)' }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {consultants.map((c, i) => (
-                  <tr
-                    key={c.consultant}
-                    style={{ borderBottom: '1px solid var(--border-subtle)' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          <div className="space-y-2">
+            {consultants.map((c, i) => {
+              const isExpanded = expandedConsultants.has(c.consultant)
+              return (
+                <div
+                  key={c.consultant}
+                  className="rounded-xl border overflow-hidden"
+                  style={{ borderColor: 'var(--border-subtle)' }}
+                >
+                  {/* Consultant header row — clickable */}
+                  <button
+                    className="w-full text-left"
+                    onClick={() => toggleConsultant(c.consultant)}
                   >
-                    {/* Rank */}
-                    <td className="py-3 pr-4 font-semibold w-6" style={{ color: 'var(--text-muted)' }}>
-                      {i + 1}
-                    </td>
+                    <div
+                      className="flex items-center gap-3 px-4 py-3 transition-colors"
+                      style={{ background: isExpanded ? 'oklch(0.65 0.18 270 / 0.06)' : 'var(--surface-2)' }}
+                    >
+                      {/* Rank + chevron */}
+                      <div className="flex items-center gap-2 shrink-0 w-10">
+                        <span className="text-xs font-bold w-5 text-center" style={{ color: 'var(--text-muted)' }}>
+                          {i + 1}
+                        </span>
+                        {isExpanded
+                          ? <ChevronDown size={13} style={{ color: 'var(--brand-primary)' }} />
+                          : <ChevronRight size={13} style={{ color: 'var(--text-muted)' }} />
+                        }
+                      </div>
 
-                    {/* Consultant name */}
-                    <td className="py-3 pr-4 font-medium" style={{ color: c.consultant === 'No Consultant' ? 'var(--text-muted)' : 'var(--text-primary)', minWidth: 160 }}>
-                      {c.consultant}
-                    </td>
+                      {/* Consultant name + meta */}
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <Building2 size={13} className="shrink-0" style={{ color: c.consultant === 'No Consultant' ? 'var(--text-muted)' : 'var(--brand-primary)' }} />
+                        <span
+                          className="text-sm font-semibold truncate"
+                          style={{ color: c.consultant === 'No Consultant' ? 'var(--text-muted)' : 'var(--text-primary)' }}
+                        >
+                          {c.consultant}
+                        </span>
+                        <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                          {c.projects} project{c.projects !== 1 ? 's' : ''} · {c.reports} report{c.reports !== 1 ? 's' : ''}
+                        </span>
+                      </div>
 
-                    {/* Projects */}
-                    <td className="py-3 pr-4" style={{ color: 'var(--text-secondary)' }}>
-                      {c.projects}
-                    </td>
-
-                    {/* Reports */}
-                    <td className="py-3 pr-4" style={{ color: 'var(--text-secondary)' }}>
-                      {c.reports}
-                    </td>
-
-                    {/* Compliance rate — bar + number */}
-                    <td className="py-3 pr-6" style={{ minWidth: 160 }}>
-                      <div className="flex items-center gap-2">
-                        {/* Bar track */}
-                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)', minWidth: 80 }}>
+                      {/* Compliance rate bar */}
+                      <div className="flex items-center gap-2 shrink-0" style={{ minWidth: 180 }}>
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
                           <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${c.complianceRate}%`,
-                              background: barColor(c.complianceRate),
-                            }}
+                            className="h-full rounded-full"
+                            style={{ width: `${c.complianceRate}%`, background: barColor(c.complianceRate) }}
                           />
                         </div>
-                        <span className="font-semibold shrink-0 w-9 text-right" style={{ color: rateColor(c.complianceRate) }}>
+                        <span className="text-sm font-bold w-10 text-right shrink-0" style={{ color: rateColor(c.complianceRate) }}>
                           {c.complianceRate}%
                         </span>
                       </div>
-                      <div className="flex gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                        <span style={{ color: 'var(--status-comply)' }}>{c.comply} comply</span>
-                        {c.notComply > 0 && <span style={{ color: 'var(--status-not-comply)' }}>{c.notComply} fail</span>}
-                        {c.noted > 0 && <span style={{ color: 'var(--status-noted)' }}>{c.noted} noted</span>}
-                      </div>
-                    </td>
 
-                    {/* Top failing families */}
-                    <td className="py-3">
-                      {c.topFailingFamilies.length === 0 ? (
-                        <span style={{ color: 'var(--status-comply)', fontWeight: 600 }}>None</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {c.topFailingFamilies.map(fam => (
+                      {/* Top failing families */}
+                      <div className="flex gap-1 shrink-0 ml-2">
+                        {c.topFailingFamilies.length === 0 ? (
+                          <span className="text-xs font-medium" style={{ color: 'var(--status-comply)' }}>No gaps</span>
+                        ) : (
+                          c.topFailingFamilies.map(fam => (
                             <span
                               key={fam}
                               className="px-1.5 py-0.5 rounded font-mono"
@@ -683,14 +694,106 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
                             >
                               {fam}
                             </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Expanded project list */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2, ease: 'easeInOut' }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        <div
+                          className="border-t"
+                          style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}
+                        >
+                          {/* Sub-header */}
+                          <div
+                            className="grid text-xs font-medium px-4 py-2"
+                            style={{
+                              gridTemplateColumns: '1fr 80px 80px 200px 80px',
+                              color: 'var(--text-muted)',
+                              borderBottom: '1px solid var(--border-subtle)',
+                            }}
+                          >
+                            <span>Project</span>
+                            <span className="text-center">Reports</span>
+                            <span className="text-center">Clauses</span>
+                            <span className="pl-2">Compliance</span>
+                            <span className="text-right">Breakdown</span>
+                          </div>
+
+                          {/* Project rows */}
+                          {c.projectDetails.map(p => (
+                            <Link
+                              key={p.projectId}
+                              href={`/projects/${p.projectId}`}
+                              className="block"
+                            >
+                              <motion.div
+                                whileHover={{ x: 2 }}
+                                className="grid items-center px-4 py-2.5 border-b cursor-pointer transition-colors"
+                                style={{
+                                  gridTemplateColumns: '1fr 80px 80px 200px 80px',
+                                  borderColor: 'var(--border-subtle)',
+                                }}
+                                onMouseEnter={e => (e.currentTarget.style.background = 'oklch(0.65 0.18 270 / 0.04)')}
+                                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                              >
+                                {/* Project name */}
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <ExternalLink size={11} className="shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                                  <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                                    {p.projectName}
+                                  </span>
+                                </div>
+
+                                {/* Reports */}
+                                <span className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                                  {p.reports}
+                                </span>
+
+                                {/* Clauses */}
+                                <span className="text-xs text-center" style={{ color: 'var(--text-secondary)' }}>
+                                  {p.totalClauses}
+                                </span>
+
+                                {/* Rate bar */}
+                                <div className="flex items-center gap-2 pl-2">
+                                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                                    <div
+                                      className="h-full rounded-full"
+                                      style={{ width: `${p.complianceRate}%`, background: barColor(p.complianceRate) }}
+                                    />
+                                  </div>
+                                  <span className="text-xs font-bold shrink-0 w-9 text-right" style={{ color: rateColor(p.complianceRate) }}>
+                                    {p.complianceRate}%
+                                  </span>
+                                </div>
+
+                                {/* Clause breakdown */}
+                                <div className="flex flex-col items-end gap-0.5 text-[10px]">
+                                  <span style={{ color: 'var(--status-comply)' }}>{p.comply} ✓</span>
+                                  {p.notComply > 0 && <span style={{ color: 'var(--status-not-comply)' }}>{p.notComply} ✗</span>}
+                                  {p.noted > 0 && <span style={{ color: 'var(--status-noted)' }}>{p.noted} ~</span>}
+                                </div>
+                              </motion.div>
+                            </Link>
                           ))}
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              )
+            })}
           </div>
         )}
       </motion.div>
