@@ -61,9 +61,20 @@ const BUILTIN_FAMILIES: Record<string, string> = {
   FAL_A:   'Fresh Air Louver (FAL-A)',
 }
 
+interface ProjectInfo {
+  id: string
+  name: string
+  client: string | null
+  location: string | null
+  projectNumber: string | null
+  contractor: string | null
+  mainContractor: string | null
+  consultant: string | null
+}
+
 interface Props {
   report: Report
-  project: { id: string; name: string }
+  project: ProjectInfo
   initialRows: Row[]
   isAdmin?: boolean
   userRole?: 'admin' | 'coordinator' | 'engineer'
@@ -141,6 +152,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
   const [requestChangesOpen, setRequestChangesOpen] = useState(false)
   const [requestChangesNote, setRequestChangesNote] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [showDeleteReportModal, setShowDeleteReportModal] = useState(false)
   const [regenOpen, setRegenOpen] = useState(false)
   const [regenFamily, setRegenFamily] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
@@ -229,15 +241,13 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
   }
 
   async function handleDeleteReport() {
-    if (!confirm(`Delete "${report.title}"? This cannot be undone.`)) return
+    setShowDeleteReportModal(false)
     setDeleting(true)
     const res = await fetch(`/api/compliance/${report.id}`, { method: 'DELETE' })
-    const data = await res.json()
     if (res.ok) {
       router.push(`/projects/${project.id}`)
       router.refresh()
     } else {
-      alert(data.error ?? 'Delete failed')
       setDeleting(false)
     }
   }
@@ -493,6 +503,11 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
           </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {project.name} · {report.productFamily}
+            {project.client && ` · ${project.client}`}
+            {(project.mainContractor || project.contractor) && ` · ${project.mainContractor || project.contractor}`}
+            {project.consultant && ` · ${project.consultant}`}
+            {project.location && ` · ${project.location}`}
+            {project.projectNumber && ` · #${project.projectNumber}`}
           </p>
         </div>
 
@@ -720,7 +735,7 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
             )
           })()}
           <button
-            onClick={handleDeleteReport}
+            onClick={() => setShowDeleteReportModal(true)}
             disabled={deleting}
             className="p-1.5 rounded-lg transition-all hover:bg-[var(--surface-3)] border"
             style={{ color: 'var(--status-not-comply)', borderColor: 'var(--border-default)', background: 'var(--surface-2)', opacity: deleting ? 0.5 : 1 }}
@@ -1328,6 +1343,59 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
             </div>
           </motion.div>
         </>
+      )}
+    </AnimatePresence>
+
+    {/* ── Delete report modal ── */}
+    <AnimatePresence>
+      {showDeleteReportModal && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'oklch(0 0 0 / 0.6)' }}
+          onClick={() => setShowDeleteReportModal(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 8 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+            className="rounded-2xl p-6 max-w-sm w-full border"
+            style={{ background: 'var(--surface-1)', borderColor: 'var(--border-default)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: 'oklch(0.68 0.22 25 / 0.15)' }}>
+                <Trash2 size={16} style={{ color: 'var(--status-not-comply)' }} />
+              </div>
+              <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Delete Report</h2>
+            </div>
+            <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
+              Are you sure you want to delete <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{report.title}</span>?
+            </p>
+            <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>This action cannot be undone.</p>
+            <div className="flex gap-2 justify-end">
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                onClick={() => setShowDeleteReportModal(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+              >
+                Cancel
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                onClick={handleDeleteReport}
+                className="px-4 py-2 rounded-lg text-sm font-semibold"
+                style={{ background: 'var(--status-not-comply)', color: '#fff' }}
+              >
+                Delete Report
+              </motion.button>
+            </div>
+          </motion.div>
+        </motion.div>
       )}
     </AnimatePresence>
     </>

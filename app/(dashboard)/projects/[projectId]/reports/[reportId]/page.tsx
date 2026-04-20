@@ -26,7 +26,7 @@ export default async function ReportPage({
 
   const { data: report } = await db
     .from('compliance_reports')
-    .select(`*, projects!inner(id, name, user_id), compliance_rows(*)`)
+    .select(`*, projects!inner(id, name, client, location, project_number, contractor, main_contractor, consultant, user_id), compliance_rows(*)`)
     .eq('id', reportId)
     .single()
 
@@ -44,7 +44,17 @@ export default async function ReportPage({
     updated_at: string
     generation_metadata: Record<string, unknown> | null
     verification_note: string | null
-    projects: { id: string; name: string; user_id: string }
+    projects: {
+      id: string
+      name: string
+      client: string | null
+      location: string | null
+      project_number: string | null
+      contractor: string | null
+      main_contractor: string | null
+      consultant: string | null
+      user_id: string
+    }
     compliance_rows: Array<{
       id: string; sort_order: number; clause: string; requirement: string;
       product_response: string; status: string; remark: string;
@@ -75,7 +85,16 @@ export default async function ReportPage({
         generationMetadata: typedReport.generation_metadata,
         verificationNote: typedReport.verification_note ?? null,
       }}
-      project={{ id: typedReport.projects.id, name: typedReport.projects.name }}
+      project={{
+        id: typedReport.projects.id,
+        name: typedReport.projects.name,
+        client: typedReport.projects.client,
+        location: typedReport.projects.location,
+        projectNumber: typedReport.projects.project_number,
+        contractor: typedReport.projects.contractor,
+        mainContractor: typedReport.projects.main_contractor,
+        consultant: typedReport.projects.consultant,
+      }}
       initialRows={rows}
       isAdmin={isAdmin}
       userRole={role}

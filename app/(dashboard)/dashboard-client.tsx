@@ -18,6 +18,9 @@ interface Project {
   name: string
   client: string | null
   location: string | null
+  contractor: string | null
+  main_contractor: string | null
+  consultant: string | null
   updated_at: string
   compliance_reports: Report[]
   ownerName?: string
@@ -175,6 +178,16 @@ export function DashboardClient({ userName, projects, isAdmin }: Props) {
                         {project.client && (
                           <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
                             {project.client}
+                          </p>
+                        )}
+                        {(project.contractor || project.main_contractor) && (
+                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                            {project.main_contractor || project.contractor}
+                          </p>
+                        )}
+                        {project.consultant && (
+                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                            {project.consultant}
                           </p>
                         )}
                         {isAdmin && project.ownerName && (

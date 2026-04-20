@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthContext } from '@/lib/auth'
 import { z } from 'zod'
 
 const updateSchema = z.object({
@@ -8,6 +9,9 @@ const updateSchema = z.object({
   location: z.string().optional(),
   projectNumber: z.string().optional(),
   description: z.string().optional(),
+  contractor: z.string().optional(),
+  mainContractor: z.string().optional(),
+  consultant: z.string().optional(),
   status: z.enum(['active', 'archived']).optional(),
 })
 
@@ -16,11 +20,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { user, isAdmin, supabase } = ctx
 
-  const { data, error } = await supabase
+  const db = isAdmin ? createAdminClient() : supabase
+  let query = db
     .from('projects')
     .select(`
       *,
@@ -31,8 +36,10 @@ export async function GET(
       )
     `)
     .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
+
+  if (!isAdmin) query = query.eq('user_id', user.id)
+
+  const { data, error } = await query.single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 })
   return NextResponse.json(data)
@@ -43,23 +50,24 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx.isAdmin) return NextResponse.json({ error: 'Only admins can modify project details.' }, { status: 403 })
 
   const body = await req.json()
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
-  const { data, error } = await supabase
+  const adminDb = createAdminClient()
+  const { data, error } = await adminDb
     .from('projects')
     .update({
       ...parsed.data,
       project_number: parsed.data.projectNumber,
+      main_contractor: parsed.data.mainContractor,
       updated_at: new Date().toISOString(),
     })
     .eq('id', id)
-    .eq('user_id', user.id)
     .select()
     .single()
 
@@ -72,15 +80,15 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!ctx.isAdmin) return NextResponse.json({ error: 'Only admins can delete projects.' }, { status: 403 })
 
-  const { error } = await supabase
+  const adminDb = createAdminClient()
+  const { error } = await adminDb
     .from('projects')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

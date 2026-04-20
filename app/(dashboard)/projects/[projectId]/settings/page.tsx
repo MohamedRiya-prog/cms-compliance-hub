@@ -1,5 +1,6 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthContext } from '@/lib/auth'
 import { ProjectSettingsClient } from './project-settings-client'
 
 export default async function ProjectSettingsPage({
@@ -8,15 +9,15 @@ export default async function ProjectSettingsPage({
   params: Promise<{ projectId: string }>
 }) {
   const { projectId } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) notFound()
+  const ctx = await getAuthContext()
+  if (!ctx) redirect('/login')
+  if (!ctx.isAdmin) redirect(`/projects/${projectId}`)
 
-  const { data: project } = await supabase
+  const adminDb = createAdminClient()
+  const { data: project } = await adminDb
     .from('projects')
     .select('*')
     .eq('id', projectId)
-    .eq('user_id', user.id)
     .single()
 
   if (!project) notFound()

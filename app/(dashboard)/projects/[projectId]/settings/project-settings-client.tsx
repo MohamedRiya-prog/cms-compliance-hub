@@ -8,7 +8,8 @@ import Link from 'next/link'
 
 interface Project {
   id: string; name: string; client: string | null; location: string | null;
-  project_number: string | null; description: string | null; status: string
+  project_number: string | null; description: string | null; status: string;
+  contractor: string | null; main_contractor: string | null; consultant: string | null;
 }
 
 export function ProjectSettingsClient({ project }: { project: Project }) {
@@ -18,6 +19,9 @@ export function ProjectSettingsClient({ project }: { project: Project }) {
     client: project.client ?? '',
     location: project.location ?? '',
     projectNumber: project.project_number ?? '',
+    contractor: project.contractor ?? '',
+    mainContractor: project.main_contractor ?? '',
+    consultant: project.consultant ?? '',
     description: project.description ?? '',
   })
   const [saving, setSaving] = useState(false)
@@ -60,6 +64,9 @@ export function ProjectSettingsClient({ project }: { project: Project }) {
           { label: 'Client', field: 'client' },
           { label: 'Location', field: 'location' },
           { label: 'Project Number', field: 'projectNumber' },
+          { label: 'Contractor', field: 'contractor' },
+          { label: 'Main Contractor', field: 'mainContractor' },
+          { label: 'Consultant', field: 'consultant' },
         ].map(({ label, field, required }) => (
           <div key={field}>
             <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>{label}</label>
