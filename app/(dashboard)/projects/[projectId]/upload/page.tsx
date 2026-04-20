@@ -52,7 +52,7 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
 
   const [file, setFile] = useState<File | null>(null)
   const [pasteText, setPasteText] = useState('')
-  const [mode, setMode] = useState<'file' | 'text'>('file')
+  const [mode, setMode] = useState<'file' | 'text'>('text')
   const [dragging, setDragging] = useState(false)
   const [parsing, setParsing] = useState(false)
   const [sections, setSections] = useState<DetectedSection[]>([])
@@ -250,27 +250,30 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
       </Link>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Upload Specification</h1>
-        <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Upload a PDF, Word, or Excel spec — or paste text directly</p>
+        <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>New Compliance Report</h1>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Paste your specification text to detect HVAC sections and generate compliance tables</p>
 
-        {/* Mode toggle */}
-        <div className="flex gap-1 mb-5 p-1 rounded-lg w-fit" style={{ background: 'var(--surface-2)' }}>
-          {(['file', 'text'] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className="px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize"
-              style={{
-                background: mode === m ? 'var(--surface-3)' : 'transparent',
-                color: mode === m ? 'var(--text-primary)' : 'var(--text-muted)',
-              }}
-            >
-              {m === 'file' ? 'Upload File' : 'Paste Text'}
-            </button>
-          ))}
-        </div>
+        {/* File upload mode toggle — hidden, kept for future use */}
+        {false && (
+          <div className="flex gap-1 mb-5 p-1 rounded-lg w-fit" style={{ background: 'var(--surface-2)' }}>
+            {(['file', 'text'] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="px-4 py-1.5 rounded-md text-sm font-medium transition-all capitalize"
+                style={{
+                  background: mode === m ? 'var(--surface-3)' : 'transparent',
+                  color: mode === m ? 'var(--text-primary)' : 'var(--text-muted)',
+                }}
+              >
+                {m === 'file' ? 'Upload File' : 'Paste Text'}
+              </button>
+            ))}
+          </div>
+        )}
 
-        {mode === 'file' ? (
+        {/* File drop zone — hidden, kept for future use */}
+        {mode === 'file' && false && (
           <motion.div
             onDragOver={e => { e.preventDefault(); setDragging(true) }}
             onDragLeave={() => setDragging(false)}
@@ -305,21 +308,21 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
               </>
             )}
           </motion.div>
-        ) : (
-          <textarea
-            value={pasteText}
-            onChange={e => setPasteText(e.target.value)}
-            placeholder="Paste your specification text here…"
-            rows={12}
-            className="w-full rounded-xl p-4 text-sm font-mono resize-y mb-4"
-            style={{
-              background: 'var(--surface-1)',
-              border: '1px solid var(--border-default)',
-              color: 'var(--text-primary)',
-              outline: 'none',
-            }}
-          />
         )}
+
+        <textarea
+          value={pasteText}
+          onChange={e => setPasteText(e.target.value)}
+          placeholder="Paste your specification text here…"
+          rows={12}
+          className="w-full rounded-xl p-4 text-sm font-mono resize-y mb-4"
+          style={{
+            background: 'var(--surface-1)',
+            border: '1px solid var(--border-default)',
+            color: 'var(--text-primary)',
+            outline: 'none',
+          }}
+        />
 
         {error && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex items-start gap-2 px-3 py-2.5 rounded-lg mb-4 text-sm" style={{ background: 'oklch(0.68 0.22 25 / 0.1)', color: 'var(--status-not-comply)', border: '1px solid oklch(0.68 0.22 25 / 0.2)' }}>
