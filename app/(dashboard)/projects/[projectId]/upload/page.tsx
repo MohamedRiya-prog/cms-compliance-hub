@@ -297,8 +297,8 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
             {file ? (
               <>
                 <FileText size={32} className="mb-3" style={{ color: 'var(--status-comply)' }} />
-                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{file.name}</p>
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{formatFileSize(file.size)}</p>
+                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{file!.name}</p>
+                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{formatFileSize(file!.size)}</p>
               </>
             ) : (
               <>
