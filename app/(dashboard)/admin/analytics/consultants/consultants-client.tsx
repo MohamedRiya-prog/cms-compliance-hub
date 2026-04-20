@@ -69,41 +69,39 @@ function highlight(text: string, query: string) {
 }
 
 export function ConsultantsClient({ consultants }: Props) {
-  const [search, setSearch] = useState('')
+  const [consultantSearch, setConsultantSearch] = useState('')
+  const [projectSearch, setProjectSearch] = useState('')
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [pages, setPages] = useState<Map<string, number>>(new Map())
 
-  const q = search.trim().toLowerCase()
+  const cq = consultantSearch.trim().toLowerCase()
+  const pq = projectSearch.trim().toLowerCase()
 
-  // Filter + decide which consultants to show and which projects to highlight
+  // Filter consultants + scope project lists based on independent search terms
   const filtered = useMemo(() => {
-    if (!q) return consultants.map(c => ({ ...c, matchedProjects: null as null | ProjectDetail[] }))
-
     return consultants
       .map(c => {
-        const nameMatch = c.consultant.toLowerCase().includes(q)
-        const matchedProjects = c.projectDetails.filter(p =>
-          p.projectName.toLowerCase().includes(q)
-        )
-        if (!nameMatch && matchedProjects.length === 0) return null
-        return {
-          ...c,
-          // When search matches projects, scope the visible list to matches
-          matchedProjects: nameMatch ? null : matchedProjects,
-        }
+        // Consultant name filter
+        if (cq && !c.consultant.toLowerCase().includes(cq)) return null
+
+        // Project filter — if active, scope the visible project list
+        const matchedProjects = pq
+          ? c.projectDetails.filter(p => p.projectName.toLowerCase().includes(pq))
+          : null
+
+        // If project search is active but no projects match, hide this consultant
+        if (pq && matchedProjects!.length === 0) return null
+
+        return { ...c, matchedProjects }
       })
       .filter(Boolean) as (ConsultantStat & { matchedProjects: null | ProjectDetail[] })[]
-  }, [q, consultants])
+  }, [cq, pq, consultants])
 
-  // Auto-expand consultants where a project matches (not the consultant name itself)
+  // Auto-expand when project search is active
   const autoExpanded = useMemo(() => {
-    if (!q) return new Set<string>()
-    return new Set(
-      filtered
-        .filter(c => c.matchedProjects !== null && c.matchedProjects.length > 0)
-        .map(c => c.consultant)
-    )
-  }, [q, filtered])
+    if (!pq) return new Set<string>()
+    return new Set(filtered.map(c => c.consultant))
+  }, [pq, filtered])
 
   function toggle(name: string) {
     setExpanded(prev => {
@@ -152,45 +150,53 @@ export function ConsultantsClient({ consultants }: Props) {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative mb-5">
-        <Search
-          size={14}
-          className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-          style={{ color: 'var(--text-muted)' }}
-        />
-        <input
-          value={search}
-          onChange={e => {
-            setSearch(e.target.value)
-            setExpanded(new Set()) // reset manual expansions on new search
-            setPages(new Map())
-          }}
-          placeholder="Search consultant or project name…"
-          className="w-full pl-9 pr-9 py-2.5 rounded-xl text-sm outline-none"
-          style={{
-            background: 'var(--surface-1)',
-            border: '1px solid var(--border-default)',
-            color: 'var(--text-primary)',
-          }}
-        />
-        {search && (
-          <button
-            onClick={() => { setSearch(''); setExpanded(new Set()); setPages(new Map()) }}
-            className="absolute right-3 top-1/2 -translate-y-1/2"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <X size={14} />
-          </button>
-        )}
+      {/* Search bars */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* Consultant search */}
+        <div>
+          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Consultant</p>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+            <input
+              value={consultantSearch}
+              onChange={e => { setConsultantSearch(e.target.value); setExpanded(new Set()); setPages(new Map()) }}
+              placeholder="Filter by consultant…"
+              className="w-full pl-8 pr-8 py-2 rounded-lg text-sm outline-none"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+            />
+            {consultantSearch && (
+              <button onClick={() => setConsultantSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Project search */}
+        <div>
+          <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Project</p>
+          <div className="relative">
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+            <input
+              value={projectSearch}
+              onChange={e => { setProjectSearch(e.target.value); setExpanded(new Set()); setPages(new Map()) }}
+              placeholder="Find project across consultants…"
+              className="w-full pl-8 pr-8 py-2 rounded-lg text-sm outline-none"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+            />
+            {projectSearch && (
+              <button onClick={() => setProjectSearch('')} className="absolute right-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Results count when searching */}
-      {q && (
+      {/* Results count */}
+      {(cq || pq) && (
         <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
-          {filtered.length === 0
-            ? 'No results'
-            : `${filtered.length} consultant${filtered.length !== 1 ? 's' : ''} matched`}
+          {filtered.length === 0 ? 'No results' : `${filtered.length} consultant${filtered.length !== 1 ? 's' : ''} matched`}
         </p>
       )}
 
@@ -206,7 +212,7 @@ export function ConsultantsClient({ consultants }: Props) {
         <div className="py-16 text-center">
           <Search size={28} className="mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
           <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-            No consultants or projects match &ldquo;{search}&rdquo;
+            No results for{cq ? ` consultant "${consultantSearch}"` : ''}{pq ? ` project "${projectSearch}"` : ''}
           </p>
         </div>
       ) : (
@@ -256,7 +262,7 @@ export function ConsultantsClient({ consultants }: Props) {
                           className="text-sm font-semibold truncate"
                           style={{ color: c.consultant === 'No Consultant' ? 'var(--text-muted)' : 'var(--text-primary)' }}
                         >
-                          {highlight(c.consultant, q)}
+                          {highlight(c.consultant, cq)}
                         </p>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                           {c.projects} project{c.projects !== 1 ? 's' : ''} · {c.reports} report{c.reports !== 1 ? 's' : ''} · {c.totalClauses.toLocaleString()} clauses
@@ -353,7 +359,7 @@ export function ConsultantsClient({ consultants }: Props) {
                               <div className="flex items-center gap-2 min-w-0">
                                 <ExternalLink size={11} className="shrink-0" style={{ color: 'var(--brand-primary)' }} />
                                 <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                                  {highlight(p.projectName, q)}
+                                  {highlight(p.projectName, pq)}
                                 </span>
                               </div>
 
