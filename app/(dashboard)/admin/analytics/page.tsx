@@ -22,7 +22,7 @@ export default async function AdminAnalyticsPage() {
   // Fetch all completed compliance reports
   const { data: reports } = await db
     .from('compliance_reports')
-    .select('id, product_family, status, summary, created_at, projects!inner(user_id)')
+    .select('id, product_family, status, summary, created_at, projects!inner(user_id, id, consultant)')
     .not('status', 'in', '("generating","error")')
 
   // Fetch failing rows for gap analysis
@@ -52,7 +52,7 @@ export default async function AdminAnalyticsPage() {
     status: string
     summary: { total?: number; comply?: number; notComply?: number; noted?: number; not_part_of_proposal?: number } | null
     created_at: string
-    projects: { user_id: string }
+    projects: { user_id: string; id: string; consultant: string | null }
   }
   type FailingRow = {
     status: string
@@ -241,12 +241,84 @@ export default async function AdminAnalyticsPage() {
     })
     .sort((a, b) => b.reports - a.reports)
 
+  // ── Consultants ───────────────────────────────────────────────────────────
+  // Build a map of reportId → consultant (for cross-referencing failing rows)
+  const reportConsultantMap = new Map(
+    reportsArr.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
+  )
+
+  const consultantMap = new Map<string, {
+    consultant: string
+    projectIds: Set<string>
+    reports: number
+    totalClauses: number
+    comply: number
+    notComply: number
+    noted: number
+    familyFails: Map<string, number>
+    lastActivity: string
+  }>()
+
+  for (const r of reportsArr) {
+    const name = r.projects.consultant?.trim() || 'No Consultant'
+    if (!consultantMap.has(name)) {
+      consultantMap.set(name, {
+        consultant: name,
+        projectIds: new Set(),
+        reports: 0,
+        totalClauses: 0,
+        comply: 0,
+        notComply: 0,
+        noted: 0,
+        familyFails: new Map(),
+        lastActivity: r.created_at,
+      })
+    }
+    const entry = consultantMap.get(name)!
+    entry.projectIds.add(r.projects.id)
+    entry.reports++
+    entry.totalClauses += r.summary?.total ?? 0
+    entry.comply       += r.summary?.comply ?? 0
+    entry.notComply    += r.summary?.notComply ?? 0
+    entry.noted        += r.summary?.noted ?? 0
+    if (r.created_at > entry.lastActivity) entry.lastActivity = r.created_at
+  }
+
+  // Tally failing product families per consultant
+  for (const row of rowsArr) {
+    const consultant = reportConsultantMap.get(row.compliance_reports.id)
+    if (!consultant) continue
+    const entry = consultantMap.get(consultant)
+    if (!entry) continue
+    const fam = row.compliance_reports.product_family
+    entry.familyFails.set(fam, (entry.familyFails.get(fam) ?? 0) + 1)
+  }
+
+  const consultants = Array.from(consultantMap.values())
+    .map(c => ({
+      consultant: c.consultant,
+      projects: c.projectIds.size,
+      reports: c.reports,
+      totalClauses: c.totalClauses,
+      comply: c.comply,
+      notComply: c.notComply,
+      noted: c.noted,
+      complianceRate: c.totalClauses > 0 ? Math.round((c.comply / c.totalClauses) * 100) : 0,
+      topFailingFamilies: Array.from(c.familyFails.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([fam]) => fam),
+      lastActivity: c.lastActivity,
+    }))
+    .sort((a, b) => b.complianceRate - a.complianceRate)
+
   return (
     <AnalyticsClient
       overview={{ totalReports, totalClauses, avgComplianceRate, activeUsers }}
       products={products}
       gaps={gaps}
       users={users}
+      consultants={consultants}
       dailyCounts={dailyCounts}
     />
   )

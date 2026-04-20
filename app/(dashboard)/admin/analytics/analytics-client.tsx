@@ -58,11 +58,25 @@ interface UserStat {
   lastActivity: string
 }
 
+interface ConsultantStat {
+  consultant: string
+  projects: number
+  reports: number
+  totalClauses: number
+  comply: number
+  notComply: number
+  noted: number
+  complianceRate: number
+  topFailingFamilies: string[]
+  lastActivity: string
+}
+
 interface Props {
   overview: Overview
   products: ProductStat[]
   gaps: GapItem[]
   users: UserStat[]
+  consultants: ConsultantStat[]
   dailyCounts: Record<string, number>
 }
 
@@ -291,7 +305,7 @@ const sectionVariants = {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }: Props) {
+export function AnalyticsClient({ overview, products, gaps, users, consultants, dailyCounts }: Props) {
   // Default to the 3 lowest-rate families
   const defaultFamily = products[0]?.family ?? null
   const [selectedFamily, setSelectedFamily] = useState<string | null>(null)
@@ -560,9 +574,130 @@ export function AnalyticsClient({ overview, products, gaps, users, dailyCounts }
         </motion.div>
       )}
 
-      {/* ── Section 5: User activity table ──────────────────────────────── */}
+      {/* ── Section 5: Consultant compliance table ──────────────────────── */}
       <motion.div
         custom={4}
+        initial="hidden"
+        animate="visible"
+        variants={sectionVariants}
+        className="rounded-xl p-5 border mb-6"
+        style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
+      >
+        <div className="mb-4">
+          <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
+            Compliance Score by Consultant
+          </h2>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            How well our products match each consultant&apos;s specifications
+          </p>
+        </div>
+
+        {consultants.length === 0 ? (
+          <p className="text-sm py-4" style={{ color: 'var(--text-muted)' }}>
+            No consultant data yet — add consultants to your projects to see scores here.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  {['#', 'Consultant', 'Projects', 'Reports', 'Compliance Rate', 'Top Failing Families'].map(h => (
+                    <th
+                      key={h}
+                      className="text-left pb-2 pr-4 font-medium"
+                      style={{ color: 'var(--text-muted)' }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {consultants.map((c, i) => (
+                  <tr
+                    key={c.consultant}
+                    style={{ borderBottom: '1px solid var(--border-subtle)' }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    {/* Rank */}
+                    <td className="py-3 pr-4 font-semibold w-6" style={{ color: 'var(--text-muted)' }}>
+                      {i + 1}
+                    </td>
+
+                    {/* Consultant name */}
+                    <td className="py-3 pr-4 font-medium" style={{ color: c.consultant === 'No Consultant' ? 'var(--text-muted)' : 'var(--text-primary)', minWidth: 160 }}>
+                      {c.consultant}
+                    </td>
+
+                    {/* Projects */}
+                    <td className="py-3 pr-4" style={{ color: 'var(--text-secondary)' }}>
+                      {c.projects}
+                    </td>
+
+                    {/* Reports */}
+                    <td className="py-3 pr-4" style={{ color: 'var(--text-secondary)' }}>
+                      {c.reports}
+                    </td>
+
+                    {/* Compliance rate — bar + number */}
+                    <td className="py-3 pr-6" style={{ minWidth: 160 }}>
+                      <div className="flex items-center gap-2">
+                        {/* Bar track */}
+                        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)', minWidth: 80 }}>
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${c.complianceRate}%`,
+                              background: barColor(c.complianceRate),
+                            }}
+                          />
+                        </div>
+                        <span className="font-semibold shrink-0 w-9 text-right" style={{ color: rateColor(c.complianceRate) }}>
+                          {c.complianceRate}%
+                        </span>
+                      </div>
+                      <div className="flex gap-2 mt-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                        <span style={{ color: 'var(--status-comply)' }}>{c.comply} comply</span>
+                        {c.notComply > 0 && <span style={{ color: 'var(--status-not-comply)' }}>{c.notComply} fail</span>}
+                        {c.noted > 0 && <span style={{ color: 'var(--status-noted)' }}>{c.noted} noted</span>}
+                      </div>
+                    </td>
+
+                    {/* Top failing families */}
+                    <td className="py-3">
+                      {c.topFailingFamilies.length === 0 ? (
+                        <span style={{ color: 'var(--status-comply)', fontWeight: 600 }}>None</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {c.topFailingFamilies.map(fam => (
+                            <span
+                              key={fam}
+                              className="px-1.5 py-0.5 rounded font-mono"
+                              style={{
+                                background: 'oklch(0.68 0.22 25 / 0.10)',
+                                color: 'var(--status-not-comply)',
+                                border: '1px solid oklch(0.68 0.22 25 / 0.20)',
+                                fontSize: 10,
+                              }}
+                            >
+                              {fam}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </motion.div>
+
+      {/* ── Section 6: User activity table ──────────────────────────────── */}
+      <motion.div
+        custom={5}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
