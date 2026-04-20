@@ -21,7 +21,21 @@ export default async function AdminAnalyticsPage() {
     .from('projects')
     .select('id, name')
 
+  // Fetch product division mapping
+  const { data: productData } = await db
+    .from('product_data')
+    .select('family, division')
+    .order('family')
+
   const projectNameMap = new Map((projects ?? []).map((p: { id: string; name: string }) => [p.id, p.name]))
+
+  // Build family → division map (use latest entry per family)
+  const familyDivisionMap = new Map<string, string>()
+  for (const pd of (productData ?? []) as { family: string; division: string | null }[]) {
+    if (!familyDivisionMap.has(pd.family)) {
+      familyDivisionMap.set(pd.family, pd.division ?? 'GD & ACC')
+    }
+  }
 
   // Fetch all profiles (no email column — get that from auth)
   const { data: profiles } = await db
@@ -303,6 +317,44 @@ export default async function AdminAnalyticsPage() {
     }))
     .sort((a, b) => b.complianceRate - a.complianceRate)
 
+  // ── Division stats ──────────────────────────────────────────────────────────
+  const divisionMap = new Map<string, {
+    division: string
+    reports: number
+    totalClauses: number
+    comply: number
+    notComply: number
+    noted: number
+    notPartOfProposal: number
+    lastActivity: string
+  }>()
+
+  for (const r of reportsArr) {
+    const div = familyDivisionMap.get(r.product_family) ?? 'GD & ACC'
+    if (!divisionMap.has(div)) {
+      divisionMap.set(div, {
+        division: div, reports: 0, totalClauses: 0,
+        comply: 0, notComply: 0, noted: 0, notPartOfProposal: 0,
+        lastActivity: r.created_at,
+      })
+    }
+    const de = divisionMap.get(div)!
+    de.reports++
+    de.totalClauses      += r.summary?.total              ?? 0
+    de.comply            += r.summary?.comply             ?? 0
+    de.notComply         += r.summary?.notComply          ?? 0
+    de.noted             += r.summary?.noted              ?? 0
+    de.notPartOfProposal += r.summary?.not_part_of_proposal ?? 0
+    if (r.created_at > de.lastActivity) de.lastActivity = r.created_at
+  }
+
+  const divisions = Array.from(divisionMap.values())
+    .map(d => ({
+      ...d,
+      complianceRate: d.totalClauses > 0 ? Math.round((d.comply / d.totalClauses) * 100) : 0,
+    }))
+    .sort((a, b) => a.division.localeCompare(b.division))
+
   return (
     <AnalyticsClient
       overview={{ totalReports, totalClauses, avgComplianceRate, activeUsers }}
@@ -311,6 +363,7 @@ export default async function AdminAnalyticsPage() {
       users={users}
       consultants={consultants}
       dailyCounts={dailyCounts}
+      divisions={divisions}
     />
   )
 }

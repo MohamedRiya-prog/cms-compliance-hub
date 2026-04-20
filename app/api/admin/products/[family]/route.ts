@@ -50,7 +50,7 @@ export async function PUT(
     .single()
   if (profile?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { content } = await req.json()
+  const { content, division } = await req.json()
   if (!content) return NextResponse.json({ error: 'content required' }, { status: 400 })
 
   const admin = createAdminClient()
@@ -62,14 +62,17 @@ export async function PUT(
     .limit(1)
     .single()
 
+  const insertPayload: Record<string, unknown> = {
+    family,
+    content,
+    version: (existing?.version ?? 0) + 1,
+    updated_by: user.id,
+  }
+  if (division !== undefined) insertPayload.division = division
+
   const { data, error } = await admin
     .from('product_data')
-    .insert({
-      family,
-      content,
-      version: (existing?.version ?? 0) + 1,
-      updated_by: user.id,
-    })
+    .insert(insertPayload)
     .select()
     .single()
 

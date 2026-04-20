@@ -19,7 +19,7 @@ export async function GET() {
   const admin = createAdminClient()
   const { data } = await admin
     .from('product_data')
-    .select('id, family, label, product_group, version, updated_at')
+    .select('id, family, label, product_group, division, version, updated_at')
     .order('family')
 
   return NextResponse.json(data ?? [])
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const user = await requireAdmin()
   if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { family, label, product_group, content } = await req.json()
+  const { family, label, product_group, division, content } = await req.json()
   if (!family?.trim()) return NextResponse.json({ error: 'family code is required' }, { status: 400 })
   if (!label?.trim())  return NextResponse.json({ error: 'label is required' }, { status: 400 })
 
@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       family: code,
       label: label.trim(),
       product_group: product_group?.trim() || 'Custom',
+      division: division?.trim() || 'GD & ACC',
       content: content ?? '',
       version: 1,
       updated_by: user.id,

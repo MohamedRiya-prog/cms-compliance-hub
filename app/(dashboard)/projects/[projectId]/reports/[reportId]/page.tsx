@@ -42,6 +42,8 @@ export default async function ReportPage({
     revision: number
     created_at: string
     updated_at: string
+    verified_at: string | null
+    verified_by: string | null
     generation_metadata: Record<string, unknown> | null
     verification_note: string | null
     projects: {
@@ -60,6 +62,18 @@ export default async function ReportPage({
       product_response: string; status: string; remark: string;
       confidence: string; is_edited: boolean
     }>
+  }
+
+  // Look up verifier name
+  let verifiedByName: string | null = null
+  if (typedReport?.verified_by) {
+    const adminDb2 = createAdminClient()
+    const { data: verifierProfile } = await adminDb2
+      .from('profiles')
+      .select('full_name')
+      .eq('id', typedReport.verified_by)
+      .single()
+    verifiedByName = verifierProfile?.full_name ?? null
   }
 
   // Admins and engineers see all reports; others only see their own project's reports
@@ -84,6 +98,8 @@ export default async function ReportPage({
         updatedAt: typedReport.updated_at,
         generationMetadata: typedReport.generation_metadata,
         verificationNote: typedReport.verification_note ?? null,
+        verifiedBy: verifiedByName,
+        verifiedAt: typedReport.verified_at ?? null,
       }}
       project={{
         id: typedReport.projects.id,

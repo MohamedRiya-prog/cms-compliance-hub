@@ -37,6 +37,8 @@ interface Report {
   updatedAt: string
   generationMetadata: Record<string, unknown> | null
   verificationNote: string | null
+  verifiedBy: string | null
+  verifiedAt: string | null
 }
 
 const BUILTIN_FAMILIES: Record<string, string> = {
@@ -500,6 +502,11 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
                 </span>
               )
             })()}
+            {report.verifiedBy && (reportStatus === 'verified' || reportStatus === 'approved') && (
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                · Verified by <strong style={{ color: 'var(--text-secondary)' }}>{report.verifiedBy}</strong>
+              </span>
+            )}
           </div>
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {project.name} · {report.productFamily}

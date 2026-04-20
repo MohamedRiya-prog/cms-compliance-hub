@@ -12,10 +12,10 @@ export default async function AdminUsersPage() {
 
   const [{ data: authData }, { data: profiles }] = await Promise.all([
     adminDb.auth.admin.listUsers({ perPage: 1000 }),
-    adminDb.from('profiles').select('id, full_name, role'),
+    adminDb.from('profiles').select('id, full_name, role, divisions'),
   ])
 
-  type ProfileRow = { id: string; full_name: string | null; role: string | null }
+  type ProfileRow = { id: string; full_name: string | null; role: string | null; divisions: string[] | null }
   const profileMap = new Map((profiles ?? []).map((p) => [p.id, p as ProfileRow]))
 
   const users = (authData?.users ?? []).map((u) => ({
@@ -23,6 +23,7 @@ export default async function AdminUsersPage() {
     email: u.email ?? '',
     fullName: profileMap.get(u.id)?.full_name ?? null,
     role: profileMap.get(u.id)?.role ?? 'coordinator',
+    divisions: profileMap.get(u.id)?.divisions ?? [],
     createdAt: u.created_at,
     lastSignIn: u.last_sign_in_at ?? null,
   }))

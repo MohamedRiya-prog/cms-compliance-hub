@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Users, Shield, ClipboardCheck, Wrench, Search, X } from 'lucide-react'
+import { Users, Shield, ClipboardCheck, Wrench, Search, X, Tag, Plus } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface UserRow {
@@ -10,6 +10,7 @@ interface UserRow {
   email: string
   fullName: string | null
   role: string
+  divisions: string[]
   createdAt: string
   lastSignIn: string | null
 }
@@ -46,6 +47,9 @@ const ROLE_CONFIG: Record<string, { label: string; icon: React.ElementType; colo
   },
 }
 
+// Known divisions — grow over time
+const KNOWN_DIVISIONS = ['GD & ACC']
+
 function RoleBadge({ role }: { role: string }) {
   const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.engineer
   const Icon = cfg.icon
@@ -60,11 +64,34 @@ function RoleBadge({ role }: { role: string }) {
   )
 }
 
+function DivisionTag({ label, onRemove }: { label: string; onRemove?: () => void }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border"
+      style={{
+        color: 'oklch(0.62 0.17 240)',
+        background: 'oklch(0.62 0.17 240 / 0.10)',
+        borderColor: 'oklch(0.62 0.17 240 / 0.25)',
+      }}
+    >
+      <Tag size={8} />
+      {label}
+      {onRemove && (
+        <button onClick={onRemove} className="ml-0.5 hover:opacity-70">
+          <X size={8} />
+        </button>
+      )}
+    </span>
+  )
+}
+
 export function UsersClient({ users: initialUsers, currentUserId }: Props) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers)
   const [search, setSearch] = useState('')
   const [updating, setUpdating] = useState<string | null>(null)
   const [error, setError] = useState('')
+  // Division editing state: userId → input value
+  const [divInput, setDivInput] = useState<Record<string, string>>({})
 
   const sq = search.trim().toLowerCase()
   const filtered = sq
@@ -92,6 +119,41 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
     } finally {
       setUpdating(null)
     }
+  }
+
+  async function updateDivisions(userId: string, divisions: string[]) {
+    setUpdating(userId)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, divisions }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error ?? 'Failed to update divisions')
+        return
+      }
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, divisions } : u))
+    } finally {
+      setUpdating(null)
+    }
+  }
+
+  function addDivision(userId: string, div: string) {
+    const user = users.find(u => u.id === userId)
+    if (!user) return
+    const trimmed = div.trim()
+    if (!trimmed || user.divisions.includes(trimmed)) return
+    updateDivisions(userId, [...user.divisions, trimmed])
+    setDivInput(prev => ({ ...prev, [userId]: '' }))
+  }
+
+  function removeDivision(userId: string, div: string) {
+    const user = users.find(u => u.id === userId)
+    if (!user) return
+    updateDivisions(userId, user.divisions.filter(d => d !== div))
   }
 
   const counts = {
@@ -179,15 +241,16 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
         <div
           className="grid text-xs font-medium px-5 py-2.5 border-b"
           style={{
-            gridTemplateColumns: '1fr 120px 160px 100px',
+            gridTemplateColumns: '1.2fr 110px 140px 1fr 90px',
             color: 'var(--text-muted)',
             background: 'var(--surface-1)',
             borderColor: 'var(--border-subtle)',
           }}
         >
           <span>User</span>
-          <span>Current Role</span>
+          <span>Role</span>
           <span>Change Role</span>
+          <span>Divisions</span>
           <span className="text-right">Last Sign In</span>
         </div>
 
@@ -203,15 +266,15 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: i * 0.02 }}
-              className="grid items-center px-5 py-3.5 border-b"
+              className="grid items-start px-5 py-3.5 border-b"
               style={{
-                gridTemplateColumns: '1fr 120px 160px 100px',
+                gridTemplateColumns: '1.2fr 110px 140px 1fr 90px',
                 background: 'var(--surface-0)',
                 borderColor: 'var(--border-subtle)',
               }}
             >
               {/* Identity */}
-              <div className="min-w-0">
+              <div className="min-w-0 pt-0.5">
                 <div className="flex items-center gap-2">
                   <div
                     className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0"
@@ -234,12 +297,12 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
               </div>
 
               {/* Current role badge */}
-              <div>
+              <div className="pt-0.5">
                 <RoleBadge role={u.role} />
               </div>
 
               {/* Role selector */}
-              <div>
+              <div className="pt-0.5">
                 <select
                   value={u.role}
                   onChange={e => handleRoleChange(u.id, e.target.value)}
@@ -258,8 +321,52 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
                 </select>
               </div>
 
+              {/* Divisions */}
+              <div className="min-w-0">
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {(u.divisions ?? []).map(d => (
+                    <DivisionTag
+                      key={d}
+                      label={d}
+                      onRemove={u.id !== currentUserId ? () => removeDivision(u.id, d) : undefined}
+                    />
+                  ))}
+                  {(u.divisions ?? []).length === 0 && (
+                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>No divisions</span>
+                  )}
+                </div>
+                {u.id !== currentUserId && (
+                  <div className="flex gap-1">
+                    <input
+                      list={`divs-${u.id}`}
+                      value={divInput[u.id] ?? ''}
+                      onChange={e => setDivInput(prev => ({ ...prev, [u.id]: e.target.value }))}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { e.preventDefault(); addDivision(u.id, divInput[u.id] ?? '') }
+                      }}
+                      placeholder="Add division…"
+                      className="text-[10px] px-2 py-1 rounded-lg outline-none flex-1 min-w-0"
+                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+                    />
+                    <datalist id={`divs-${u.id}`}>
+                      {KNOWN_DIVISIONS.filter(d => !(u.divisions ?? []).includes(d)).map(d => (
+                        <option key={d} value={d} />
+                      ))}
+                    </datalist>
+                    <button
+                      onClick={() => addDivision(u.id, divInput[u.id] ?? '')}
+                      disabled={updating === u.id || !(divInput[u.id] ?? '').trim()}
+                      className="px-1.5 rounded-lg"
+                      style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}
+                    >
+                      <Plus size={10} />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Last sign in */}
-              <p className="text-xs text-right" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs text-right pt-0.5" style={{ color: 'var(--text-muted)' }}>
                 {u.lastSignIn ? formatRelativeTime(u.lastSignIn) : 'Never'}
               </p>
             </motion.div>

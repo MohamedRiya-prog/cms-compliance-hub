@@ -59,6 +59,18 @@ interface UserStat {
   lastActivity: string
 }
 
+interface DivisionStat {
+  division: string
+  reports: number
+  totalClauses: number
+  comply: number
+  notComply: number
+  noted: number
+  notPartOfProposal: number
+  complianceRate: number
+  lastActivity: string
+}
+
 interface Props {
   overview: Overview
   products: ProductStat[]
@@ -66,6 +78,7 @@ interface Props {
   users: UserStat[]
   consultants: Parameters<typeof ConsultantsClient>[0]['consultants']
   dailyCounts: Record<string, number>
+  divisions: DivisionStat[]
 }
 
 type Tab = 'overview' | 'consultants'
@@ -300,7 +313,7 @@ const sectionVariants = {
 
 // ── Main component ───────────────────────────────────────────────────────────
 
-export function AnalyticsClient({ overview, products, gaps, users, consultants, dailyCounts }: Props) {
+export function AnalyticsClient({ overview, products, gaps, users, consultants, dailyCounts, divisions }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   // Default to the 3 lowest-rate families
   const defaultFamily = products[0]?.family ?? null
@@ -431,9 +444,74 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
         })}
       </motion.div>
 
-      {/* ── Section 2: Monthly generation heatmap ───────────────────────── */}
+      {/* ── Section 2: Division stats ────────────────────────────────────── */}
+      {divisions.length > 0 && (
+        <motion.div
+          custom={1}
+          initial="hidden"
+          animate="visible"
+          variants={sectionVariants}
+          className="mb-6"
+        >
+          <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-secondary)' }}>
+            By Division
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {divisions.map(div => (
+              <div
+                key={div.division}
+                className="rounded-xl p-4 border"
+                style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)' }}
+              >
+                <div className="flex items-start justify-between gap-2 mb-3">
+                  <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{div.division}</p>
+                  <span
+                    className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
+                    style={{
+                      color: rateColor(div.complianceRate),
+                      background: div.complianceRate >= 80
+                        ? 'oklch(0.72 0.19 155 / 0.12)'
+                        : div.complianceRate >= 50
+                        ? 'oklch(0.78 0.16 85 / 0.12)'
+                        : 'oklch(0.68 0.22 25 / 0.12)',
+                    }}
+                  >
+                    {div.complianceRate}%
+                  </span>
+                </div>
+                {/* Progress bar */}
+                <div className="h-1.5 rounded-full mb-3 overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${div.complianceRate}%`,
+                      background: barColor(div.complianceRate),
+                    }}
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--status-comply)' }}>{div.comply}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Comply</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--status-not-comply)' }}>{div.notComply}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Not Comply</p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>{div.reports}</p>
+                    <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Reports</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── Section 3: Monthly generation heatmap ───────────────────────── */}
       <motion.div
-        custom={1}
+        custom={2}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
@@ -443,9 +521,9 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
         <YearCalendar dailyCounts={dailyCounts} />
       </motion.div>
 
-      {/* ── Section 3: Product compliance chart ─────────────────────────── */}
+      {/* ── Section 4: Product compliance chart ─────────────────────────── */}
       <motion.div
-        custom={2}
+        custom={3}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
@@ -506,10 +584,10 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
         )}
       </motion.div>
 
-      {/* ── Section 4: Gap analysis ──────────────────────────────────────── */}
+      {/* ── Section 5: Gap analysis ──────────────────────────────────────── */}
       {displayFamily && (
         <motion.div
-          custom={3}
+          custom={4}
           initial="hidden"
           animate="visible"
           variants={sectionVariants}
@@ -603,9 +681,9 @@ export function AnalyticsClient({ overview, products, gaps, users, consultants, 
         </motion.div>
       )}
 
-      {/* ── Section 5: User activity table ──────────────────────────────── */}
+      {/* ── Section 6: User activity table ──────────────────────────────── */}
       <motion.div
-        custom={4}
+        custom={5}
         initial="hidden"
         animate="visible"
         variants={sectionVariants}
