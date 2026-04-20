@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { invalidateCache } from '@/lib/prompt-builder'
 
 async function requireAdmin() {
   const supabase = await createClient()
@@ -75,7 +74,6 @@ export async function PUT(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  invalidateCache()
   return NextResponse.json(data)
 }
 
@@ -103,6 +101,5 @@ export async function DELETE(
 
   const { error } = await admin.from('product_data').delete().eq('family', family)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  invalidateCache()
   return NextResponse.json({ deleted: true })
 }

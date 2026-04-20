@@ -19,11 +19,7 @@ const DETECTION_FAMILY_MAP: Record<string, string[]> = {
   FAL:      ['SDGR', 'LBG', 'LSD', 'FBD', 'AL', 'STL', 'FAL_A'],
 }
 
-// Simple in-process cache — avoids re-fetching on every request in the same process
-const cache: { rules?: string; examples?: string; products?: Record<string, string> } = {}
-
 export async function getComplianceRules(): Promise<string> {
-  if (cache.rules) return cache.rules
   const admin = createAdminClient()
   const { data } = await admin
     .from('compliance_rules')
@@ -31,12 +27,10 @@ export async function getComplianceRules(): Promise<string> {
     .order('version', { ascending: false })
     .limit(1)
     .single()
-  cache.rules = data?.content ?? ''
-  return cache.rules as string
+  return data?.content ?? ''
 }
 
 export async function getComplianceExamples(): Promise<string> {
-  if (cache.examples) return cache.examples
   const admin = createAdminClient()
   const { data } = await admin
     .from('compliance_examples')
@@ -44,14 +38,10 @@ export async function getComplianceExamples(): Promise<string> {
     .order('version', { ascending: false })
     .limit(1)
     .single()
-  cache.examples = data?.content ?? ''
-  return cache.examples as string
+  return data?.content ?? ''
 }
 
 export async function getProductData(family?: string): Promise<string> {
-  const key = family ?? 'ALL'
-  if (cache.products?.[key]) return cache.products[key]
-
   const admin = createAdminClient()
 
   // If it's a detection family, fetch and combine each constituent product record
@@ -74,9 +64,7 @@ export async function getProductData(family?: string): Promise<string> {
           parts.push(row.content)
         }
       }
-      const content = parts.join('\n\n---\n\n')
-      cache.products = { ...cache.products, [key]: content }
-      return content
+      return parts.join('\n\n---\n\n')
     }
   }
 
@@ -89,10 +77,7 @@ export async function getProductData(family?: string): Promise<string> {
       .order('version', { ascending: false })
       .limit(1)
       .single()
-    if (data?.content) {
-      cache.products = { ...cache.products, [key]: data.content }
-      return data.content
-    }
+    if (data?.content) return data.content
   }
 
   // Fall back to ALL
@@ -103,9 +88,7 @@ export async function getProductData(family?: string): Promise<string> {
     .order('version', { ascending: false })
     .limit(1)
     .single()
-  const content = data?.content ?? ''
-  cache.products = { ...cache.products, [key]: content }
-  return content
+  return data?.content ?? ''
 }
 
 export async function buildSystemPrompt(productFamily?: string): Promise<string> {
@@ -175,8 +158,3 @@ export function computePromptVersion(rules: string, products: string, examples: 
   }
 }
 
-export function invalidateCache() {
-  delete cache.rules
-  delete cache.examples
-  delete cache.products
-}

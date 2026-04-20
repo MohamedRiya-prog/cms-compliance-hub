@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { invalidateCache } from '@/lib/prompt-builder'
 
 export async function GET() {
   const supabase = await createClient()
@@ -49,6 +48,5 @@ export async function PUT(req: NextRequest) {
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  invalidateCache()
   return NextResponse.json(data)
 }
