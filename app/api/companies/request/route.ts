@@ -57,9 +57,22 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
   const { name, types, city, country } = parsed.data
+  const trimmedName = name.trim()
   const admin = createAdminClient()
+
+  // Avoid duplicate pending requests for the same company name (case-insensitive)
+  const { data: existing } = await admin
+    .from('company_requests')
+    .select('id')
+    .eq('status', 'pending')
+    .ilike('name', trimmedName)
+    .limit(1)
+    .single()
+
+  if (existing) return NextResponse.json({ ok: true }, { status: 201 })
+
   const { error } = await admin.from('company_requests').insert({
-    name: name.trim(),
+    name: trimmedName,
     types,
     city:         city ?? null,
     country:      country ?? null,
