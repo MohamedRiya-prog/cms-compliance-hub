@@ -14,12 +14,31 @@ export async function GET() {
   const admin = createAdminClient()
   const { data, error } = await admin
     .from('company_requests')
-    .select('*, profiles(full_name)')
+    .select('*')
     .eq('status', 'pending')
     .order('created_at', { ascending: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data ?? [])
+
+  const rows = data ?? []
+
+  // Resolve requester names via profiles
+  const userIds = [...new Set(rows.map((r: { requested_by: string | null }) => r.requested_by).filter(Boolean))]
+  let profileMap = new Map<string, string>()
+  if (userIds.length > 0) {
+    const { data: profiles } = await admin
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', userIds)
+    profileMap = new Map((profiles ?? []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name ?? '']))
+  }
+
+  const result = rows.map((r: { requested_by: string | null }) => ({
+    ...r,
+    profiles: r.requested_by ? { full_name: profileMap.get(r.requested_by) ?? null } : null,
+  }))
+
+  return NextResponse.json(result)
 }
 
 export async function POST(req: NextRequest) {
