@@ -59,6 +59,16 @@ function NavLinks({
   compact: boolean
   onNavigate?: () => void
 }) {
+  const [pendingRequests, setPendingRequests] = useState(0)
+
+  useEffect(() => {
+    if (!isAdmin) return
+    fetch('/api/companies/request')
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setPendingRequests(Array.isArray(d) ? d.length : 0))
+      .catch(() => {})
+  }, [isAdmin])
+
   return (
     <nav className="flex-1 p-2 space-y-0.5 overflow-y-auto">
       {navItems.map(item => {
@@ -124,6 +134,7 @@ function NavLinks({
       {settingsItems.filter(item => !item.adminOnly || isAdmin).map(item => {
         const Icon = item.icon
         const active = pathname.startsWith(item.href)
+        const badge = item.href === '/settings/companies' && pendingRequests > 0 ? pendingRequests : 0
         return (
           <Link key={item.href} href={item.href} onClick={onNavigate}>
             <motion.div
@@ -138,7 +149,17 @@ function NavLinks({
                 background: active ? 'var(--surface-3)' : 'transparent',
               }}
             >
-              <Icon size={16} className="shrink-0" />
+              <div className="relative shrink-0">
+                <Icon size={16} />
+                {badge > 0 && compact && (
+                  <span
+                    className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] font-bold"
+                    style={{ background: 'var(--status-not-comply)', color: '#fff' }}
+                  >
+                    {badge}
+                  </span>
+                )}
+              </div>
               <AnimatePresence>
                 {!compact && (
                   <motion.span
@@ -146,12 +167,20 @@ function NavLinks({
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.15 }}
-                    className="whitespace-nowrap"
+                    className="whitespace-nowrap flex-1"
                   >
                     {item.label}
                   </motion.span>
                 )}
               </AnimatePresence>
+              {badge > 0 && !compact && (
+                <span
+                  className="shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                  style={{ background: 'var(--status-not-comply)', color: '#fff' }}
+                >
+                  {badge}
+                </span>
+              )}
             </motion.div>
           </Link>
         )
