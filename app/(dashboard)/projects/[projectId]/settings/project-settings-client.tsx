@@ -47,6 +47,7 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
   })
   const [saving, setSaving] = useState(false)
   const [saved,  setSaved]  = useState(false)
+  const [error,  setError]  = useState('')
 
   // Request modal
   const [requestModal, setRequestModal] = useState<RequestModal | null>(null)
@@ -108,15 +109,21 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setSaving(true)
-    await fetch(`/api/projects/${project.id}`, {
+    setError('')
+    const res = await fetch(`/api/projects/${project.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
     setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-    router.refresh()
+    if (res.ok) {
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+      router.refresh()
+    } else {
+      const body = await res.json()
+      setError(body.error ?? 'Failed to save. Please try again.')
+    }
   }
 
   const inputStyle = {
@@ -219,6 +226,12 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
           <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Description</label>
           <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} className="resize-none" style={inputStyle} />
         </div>
+
+        {error && (
+          <p className="text-sm px-3 py-2 rounded-lg" style={{ background: 'oklch(0.68 0.22 25 / 0.1)', color: 'var(--status-not-comply)', border: '1px solid oklch(0.68 0.22 25 / 0.2)' }}>
+            {error}
+          </p>
+        )}
 
         <motion.button
           type="submit"

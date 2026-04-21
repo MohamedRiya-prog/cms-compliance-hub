@@ -18,7 +18,7 @@ async function hasDivisionAccess(projectId: string, userDivisions: string[]): Pr
 
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
-  division: z.string().min(1).optional(),
+  division: z.string().optional(),
   client: z.string().optional(),
   location: z.string().optional(),
   projectNumber: z.string().optional(),
@@ -73,15 +73,23 @@ export async function PATCH(
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
+  const d = parsed.data
+  const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (d.name !== undefined)          updatePayload.name            = d.name
+  if (d.division !== undefined)      updatePayload.division        = d.division || null
+  if (d.client !== undefined)        updatePayload.client          = d.client || null
+  if (d.location !== undefined)      updatePayload.location        = d.location || null
+  if (d.description !== undefined)   updatePayload.description     = d.description || null
+  if (d.contractor !== undefined)    updatePayload.contractor      = d.contractor || null
+  if (d.consultant !== undefined)    updatePayload.consultant      = d.consultant || null
+  if (d.status !== undefined)        updatePayload.status          = d.status
+  if (d.projectNumber !== undefined) updatePayload.project_number  = d.projectNumber || null
+  if (d.mainContractor !== undefined) updatePayload.main_contractor = d.mainContractor || null
+
   const adminDb = createAdminClient()
   const { data, error } = await adminDb
     .from('projects')
-    .update({
-      ...parsed.data,
-      project_number: parsed.data.projectNumber,
-      main_contractor: parsed.data.mainContractor,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single()
