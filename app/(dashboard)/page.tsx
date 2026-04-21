@@ -27,20 +27,19 @@ export default async function DashboardPage() {
       .order('updated_at', { ascending: false })
 
 
-    // Fetch owner profiles for all projects
+    // Fetch owner names for all projects
     const userIds = [...new Set((allProjects ?? []).map((p: { user_id: string }) => p.user_id))]
-    const { data: ownerProfiles } = await adminDb
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', userIds)
-    const profileMap = new Map((ownerProfiles ?? []).map((p: { id: string; full_name: string; email: string }) => [p.id, p]))
+    const [{ data: ownerProfiles }, { data: authUsers }] = await Promise.all([
+      adminDb.from('profiles').select('id, full_name').in('id', userIds),
+      adminDb.auth.admin.listUsers({ perPage: 1000 }),
+    ])
+    const nameMap = new Map((ownerProfiles ?? []).map((p: { id: string; full_name: string | null }) => [p.id, p.full_name]))
+    const emailMap = new Map((authUsers?.users ?? []).map(u => [u.id, u.email ?? '']))
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const projectsWithOwner = ((allProjects ?? []) as any[]).map(p => ({
       ...p,
-      ownerName: (profileMap.get(p.user_id) as { full_name?: string; email?: string } | undefined)?.full_name
-        ?? (profileMap.get(p.user_id) as { full_name?: string; email?: string } | undefined)?.email
-        ?? 'Unknown',
+      ownerName: nameMap.get(p.user_id) || emailMap.get(p.user_id)?.split('@')[0] || null,
     }))
 
     return (

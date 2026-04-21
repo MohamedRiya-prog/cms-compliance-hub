@@ -1,8 +1,9 @@
 'use client'
 
+import { useState } from 'react'
 import { motion, type Variants } from 'framer-motion'
 import Link from 'next/link'
-import { Plus, FileText, CheckCircle, Clock, FolderOpen } from 'lucide-react'
+import { Plus, FileText, CheckCircle, Clock, FolderOpen, Search } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface Report {
@@ -83,7 +84,23 @@ function projectStats(projects: Project[]) {
 }
 
 export function DashboardClient({ userName, projects, isAdmin, userDivisions }: Props) {
+  const [search, setSearch] = useState('')
   const { totalReports, rate, pending } = projectStats(projects)
+
+  const sq = search.trim().toLowerCase()
+  const filteredProjects = sq
+    ? projects.filter(p =>
+        p.name.toLowerCase().includes(sq) ||
+        (p.project_number ?? '').toLowerCase().includes(sq) ||
+        (p.client ?? '').toLowerCase().includes(sq) ||
+        (p.location ?? '').toLowerCase().includes(sq) ||
+        (p.contractor ?? '').toLowerCase().includes(sq) ||
+        (p.main_contractor ?? '').toLowerCase().includes(sq) ||
+        (p.consultant ?? '').toLowerCase().includes(sq) ||
+        (p.division ?? '').toLowerCase().includes(sq) ||
+        (p.ownerName ?? '').toLowerCase().includes(sq)
+      )
+    : projects
 
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
@@ -134,7 +151,7 @@ export function DashboardClient({ userName, projects, isAdmin, userDivisions }: 
       </motion.div>
 
       {/* Projects Grid */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
           {isAdmin ? 'All Projects' : 'Projects'}
         </h2>
@@ -149,6 +166,18 @@ export function DashboardClient({ userName, projects, isAdmin, userDivisions }: 
             New Project
           </motion.button>
         </Link>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by name, reference, client, location…"
+          className="w-full pl-8 pr-3 py-2 rounded-lg text-sm outline-none"
+          style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)' }}
+        />
       </div>
 
       {projects.length === 0 ? (
@@ -172,6 +201,19 @@ export function DashboardClient({ userName, projects, isAdmin, userDivisions }: 
             </motion.button>
           </Link>
         </motion.div>
+      ) : filteredProjects.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col items-center justify-center py-16 rounded-xl border"
+          style={{ borderColor: 'var(--border-subtle)', borderStyle: 'dashed' }}
+        >
+          <Search size={32} className="mb-3" style={{ color: 'var(--text-muted)' }} />
+          <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>No projects match &ldquo;{search}&rdquo;</p>
+          <button onClick={() => setSearch('')} className="text-xs mt-2 hover:opacity-70" style={{ color: 'var(--brand-primary)' }}>
+            Clear search
+          </button>
+        </motion.div>
       ) : (
         <motion.div
           variants={container}
@@ -179,7 +221,7 @@ export function DashboardClient({ userName, projects, isAdmin, userDivisions }: 
           animate="animate"
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
         >
-          {projects.map(project => {
+          {filteredProjects.map(project => {
             const reports = project.compliance_reports ?? []
             const deduped = dedupReports(reports)
             const total = deduped.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
