@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { buildSystemPrompt } from '@/lib/prompt-builder'
 import { parseClaudeResponse, computeSummary } from '@/lib/compliance-validator'
 import { getAuthContext } from '@/lib/auth'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -126,6 +127,18 @@ export async function POST(
     .from('compliance_reports')
     .update({ summary, status: 'review', updated_at: new Date().toISOString() })
     .eq('id', targetReportId)
+
+  // When a new revision was created, supersede previous revisions still in review
+  if (createRevision && newReportId) {
+    const adminDb = createAdminClient()
+    await adminDb
+      .from('compliance_reports')
+      .update({ status: 'superseded' })
+      .eq('project_id', typed.project_id)
+      .eq('product_family', typed.product_family)
+      .eq('status', 'review')
+      .neq('id', newReportId)
+  }
 
   const { data: newRows } = await db
     .from('compliance_rows')

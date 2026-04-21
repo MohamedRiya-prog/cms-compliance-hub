@@ -1,9 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { motion, type Variants } from 'framer-motion'
+import { motion, AnimatePresence, type Variants } from 'framer-motion'
 import Link from 'next/link'
-import { Plus, FileText, CheckCircle, Clock, FolderOpen, Search } from 'lucide-react'
+import { Plus, FileText, CheckCircle, Clock, FolderOpen, Search, ChevronDown } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface Report {
@@ -26,7 +26,8 @@ interface Project {
   division: string | null
   updated_at: string
   compliance_reports: Report[]
-  ownerName?: string
+  ownerName?: string | null
+  updatedByName?: string | null
 }
 
 interface Props {
@@ -79,8 +80,125 @@ function projectStats(projects: Project[]) {
   }
   const rate = allTotal > 0 ? Math.round((complyTotal / allTotal) * 100) : 0
   const pending = projects.reduce((a, p) =>
-    a + p.compliance_reports.filter(r => r.status === 'review').length, 0)
+    a + dedupReports(p.compliance_reports).filter(r => r.status === 'review').length, 0)
   return { totalReports, rate, pending }
+}
+
+function ProjectCard({ project, isAdmin }: { project: Project; isAdmin?: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const reports = project.compliance_reports ?? []
+  const deduped = dedupReports(reports)
+  const total  = deduped.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
+  const comply = deduped.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
+  const rate   = total > 0 ? Math.round((comply / total) * 100) : null
+
+  const details: { label: string; value: string }[] = []
+  if (project.client)           details.push({ label: 'Client',           value: project.client })
+  if (project.location)         details.push({ label: 'Location',         value: project.location })
+  if (project.main_contractor)  details.push({ label: 'Main Contractor',  value: project.main_contractor })
+  else if (project.contractor)  details.push({ label: 'Contractor',       value: project.contractor })
+  if (project.consultant)       details.push({ label: 'Consultant',       value: project.consultant })
+  if (project.division)         details.push({ label: 'Division',         value: project.division })
+  if (isAdmin && project.ownerName) details.push({ label: 'Owner', value: project.ownerName })
+  if (project.updatedByName)       details.push({ label: 'Last edited by', value: project.updatedByName })
+
+  return (
+    <motion.div
+      whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.4)' }}
+      className="rounded-xl border overflow-hidden transition-all"
+      style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
+    >
+      {/* Header — always visible, click navigates */}
+      <Link href={`/projects/${project.id}`} className="block p-4 pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+              {project.project_number && (
+                <span className="text-[10px] font-mono font-semibold shrink-0 px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}>
+                  {project.project_number}
+                </span>
+              )}
+              <h3 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                {project.name}
+              </h3>
+            </div>
+            {/* Preview line when collapsed */}
+            {!expanded && project.client && (
+              <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                {project.client}
+              </p>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {rate !== null && (
+              <span
+                className="text-xs font-bold px-2 py-0.5 rounded-full"
+                style={{
+                  background: rate >= 80 ? 'oklch(0.72 0.19 155 / 0.15)' : rate >= 50 ? 'oklch(0.78 0.16 85 / 0.15)' : 'oklch(0.68 0.22 25 / 0.15)',
+                  color:      rate >= 80 ? 'var(--status-comply)'          : rate >= 50 ? 'var(--status-noted)'        : 'var(--status-not-comply)',
+                }}
+              >
+                {rate}%
+              </span>
+            )}
+          </div>
+        </div>
+      </Link>
+
+      {/* Expandable details */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="details"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-3 space-y-1.5">
+              {details.length > 0 ? details.map(d => (
+                <div key={d.label} className="flex gap-2 text-xs">
+                  <span className="shrink-0 font-medium w-28" style={{ color: 'var(--text-muted)' }}>{d.label}</span>
+                  <span className="truncate" style={{ color: 'var(--text-secondary)' }}>{d.value}</span>
+                </div>
+              )) : (
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No additional details</p>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Footer */}
+      <div
+        className="flex items-center justify-between px-4 py-2.5 border-t"
+        style={{ borderColor: 'var(--border-subtle)' }}
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {reports.length} report{reports.length !== 1 ? 's' : ''}
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {project.updatedByName
+              ? <><span style={{ color: 'var(--text-secondary)' }}>{project.updatedByName}</span> · </>
+              : null}
+            {formatRelativeTime(project.updated_at)}
+          </span>
+        </div>
+        <button
+          onClick={() => setExpanded(v => !v)}
+          className="flex items-center gap-1 text-xs rounded px-1.5 py-0.5 hover:opacity-70 transition-opacity"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          <motion.span animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
+            <ChevronDown size={13} />
+          </motion.span>
+        </button>
+      </div>
+    </motion.div>
+  )
 }
 
 export function DashboardClient({ userName, projects, isAdmin, userDivisions }: Props) {
@@ -221,99 +339,11 @@ export function DashboardClient({ userName, projects, isAdmin, userDivisions }: 
           animate="animate"
           className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
         >
-          {filteredProjects.map(project => {
-            const reports = project.compliance_reports ?? []
-            const deduped = dedupReports(reports)
-            const total = deduped.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
-            const comply = deduped.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
-            const rate = total > 0 ? Math.round((comply / total) * 100) : null
-
-            return (
-              <motion.div key={project.id} variants={item}>
-                <Link href={`/projects/${project.id}`}>
-                  <motion.div
-                    whileHover={{ y: -2, boxShadow: '0 8px 32px oklch(0 0 0 / 0.4)' }}
-                    className="rounded-xl p-5 border cursor-pointer transition-all"
-                    style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)' }}
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {project.project_number && (
-                            <span className="text-[10px] font-mono font-semibold shrink-0 px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}>
-                              {project.project_number}
-                            </span>
-                          )}
-                          <h3 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                            {project.name}
-                          </h3>
-                        </div>
-                        {project.client && (
-                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                            {project.client}
-                          </p>
-                        )}
-                        {(project.contractor || project.main_contractor) && (
-                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                            {project.main_contractor || project.contractor}
-                          </p>
-                        )}
-                        {project.consultant && (
-                          <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
-                            {project.consultant}
-                          </p>
-                        )}
-                        {isAdmin && project.ownerName && (
-                          <p className="text-[10px] mt-0.5 truncate font-medium" style={{ color: 'var(--brand-primary)' }}>
-                            {project.ownerName}
-                          </p>
-                        )}
-                      </div>
-                      {rate !== null && (
-                        <span
-                          className="shrink-0 ml-2 text-xs font-bold px-2 py-0.5 rounded-full"
-                          style={{
-                            background: rate >= 80 ? 'oklch(0.72 0.19 155 / 0.15)' : rate >= 50 ? 'oklch(0.78 0.16 85 / 0.15)' : 'oklch(0.68 0.22 25 / 0.15)',
-                            color: rate >= 80 ? 'var(--status-comply)' : rate >= 50 ? 'var(--status-noted)' : 'var(--status-not-comply)',
-                          }}
-                        >
-                          {rate}%
-                        </span>
-                      )}
-                    </div>
-
-                    {project.location && (
-                      <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                        {project.location}
-                      </p>
-                    )}
-
-                    {project.division && (
-                      <span
-                        className="inline-block mb-3 text-[10px] font-medium px-2 py-0.5 rounded-full border"
-                        style={{
-                          color: 'oklch(0.62 0.17 240)',
-                          background: 'oklch(0.62 0.17 240 / 0.08)',
-                          borderColor: 'oklch(0.62 0.17 240 / 0.25)',
-                        }}
-                      >
-                        {project.division}
-                      </span>
-                    )}
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {reports.length} report{reports.length !== 1 ? 's' : ''}
-                      </span>
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {formatRelativeTime(project.updated_at)}
-                      </span>
-                    </div>
-                  </motion.div>
-                </Link>
-              </motion.div>
-            )
-          })}
+          {filteredProjects.map(project => (
+            <motion.div key={project.id} variants={item}>
+              <ProjectCard project={project} isAdmin={isAdmin} />
+            </motion.div>
+          ))}
         </motion.div>
       )}
     </div>

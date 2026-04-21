@@ -162,6 +162,17 @@ export async function POST(req: NextRequest) {
       })
       .eq('id', report.id)
 
+    // Supersede any previous revisions for this project+family that are still in review
+    if (nextRevision > 0) {
+      await adminDb
+        .from('compliance_reports')
+        .update({ status: 'superseded' })
+        .eq('project_id', projectId)
+        .eq('product_family', productFamily)
+        .eq('status', 'review')
+        .neq('id', report.id)
+    }
+
     return NextResponse.json({ id: report.id, summary, rowCount: rows.length })
 
   } catch (err: unknown) {

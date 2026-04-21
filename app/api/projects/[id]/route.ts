@@ -73,8 +73,12 @@ export async function PATCH(
   const parsed = updateSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
+  const { user } = ctx
   const d = parsed.data
-  const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  const updatePayload: Record<string, unknown> = {
+    updated_at: new Date().toISOString(),
+    updated_by: user.id,
+  }
   if (d.name !== undefined)          updatePayload.name            = d.name
   if (d.division !== undefined)      updatePayload.division        = d.division || null
   if (d.client !== undefined)        updatePayload.client          = d.client || null
