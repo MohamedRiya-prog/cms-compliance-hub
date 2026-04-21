@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { Sidebar } from '@/components/layout/sidebar'
+import { InactivityGuard } from '@/components/layout/inactivity-guard'
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -42,6 +43,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: 'var(--surface-0)' }}>
+      <InactivityGuard />
       <Sidebar
         userId={user.id}
         userEmail={user.email}
