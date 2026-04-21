@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
   const user = await requireAdmin()
   if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const { family, label, product_group, division, content } = await req.json()
+  const { family, label, product_group, division, detection_keywords, content } = await req.json()
   if (!family?.trim()) return NextResponse.json({ error: 'family code is required' }, { status: 400 })
   if (!label?.trim())  return NextResponse.json({ error: 'label is required' }, { status: 400 })
 
@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
       family: code,
       label: label.trim(),
       product_group: product_group?.trim() || 'Custom',
-      division: division?.trim() || 'GD & ACC',
+      division: division?.trim() || null,
+      detection_keywords: detection_keywords?.trim() || null,
       content: content ?? '',
       version: 1,
       updated_by: user.id,

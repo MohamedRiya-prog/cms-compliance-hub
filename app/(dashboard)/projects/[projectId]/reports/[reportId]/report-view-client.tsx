@@ -209,6 +209,12 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
     })
 
     if (res.ok) {
+      const data = await res.json()
+      // Locked report → was forked → redirect to the new revision
+      if (data.newReportId) {
+        router.push(`/projects/${project.id}/reports/${data.newReportId}`)
+        return
+      }
       setRows(prev => prev.map(r =>
         r.id === rowId ? { ...r, [field]: editValue, is_edited: true } : r
       ))
@@ -345,6 +351,16 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
       body: JSON.stringify({ message: chatInput, referencedRowId: selectedRowId }),
     })
 
+    // Locked report → was forked → redirect to new revision (user resends message there)
+    if (res.status === 202) {
+      const data = await res.json()
+      if (data.forked && data.newReportId) {
+        router.push(`/projects/${project.id}/reports/${data.newReportId}`)
+        setChatLoading(false)
+        return
+      }
+    }
+
     if (!res.ok) {
       if (res.status === 429) {
         setChatMessages(prev => [...prev, {
@@ -424,6 +440,11 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
   }
 
   function handleRedoAll() {
+    // Locked reports always create a new revision — skip the dialog
+    if (reportStatus === 'verified' || reportStatus === 'approved') {
+      executeRegen(true)
+      return
+    }
     setRevisionDialogOpen(true)
   }
 
@@ -765,6 +786,19 @@ export function ReportViewClient({ report, project, initialRows, isAdmin, userRo
           </button>
         </div>
       </div>
+
+      {/* Locked report banner */}
+      {(reportStatus === 'verified' || reportStatus === 'approved') && (
+        <div
+          className="flex items-center gap-2 px-5 py-2 border-b shrink-0"
+          style={{ background: 'oklch(0.72 0.19 155 / 0.07)', borderColor: 'oklch(0.72 0.19 155 / 0.25)' }}
+        >
+          <ShieldCheck size={13} className="shrink-0" style={{ color: 'var(--status-comply)' }} />
+          <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+            This report is <strong>{reportStatus}</strong>. Any edit, chat, or regeneration will automatically create a new working revision.
+          </p>
+        </div>
+      )}
 
       {/* Verification note banner */}
       {reportStatus === 'needs_revision' && verificationNote && (

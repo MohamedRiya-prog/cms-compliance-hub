@@ -60,6 +60,13 @@ type ProjectMeta = {
   user_id: string
 }
 
+/** Produces a safe filename: "CMS-001 - Project Name.xlsx" */
+function buildFileName(projectNumber: string | null, projectName: string): string {
+  const prefix = projectNumber ? `${projectNumber} - ` : ''
+  const safe = `${prefix}${projectName}`.replace(/[\\/:*?"<>|]/g, '').trim()
+  return `${safe}.xlsx`
+}
+
 /** Builds a single-sheet workbook with project header, all reports, and footer */
 function buildWorkbook(
   projectMeta: ProjectMeta,
@@ -235,24 +242,35 @@ function buildWorkbook(
 async function exportProject(req: NextRequest, projectId: string) {
   const ctx = await getAuthContext()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { user, role, isAdmin, supabase } = ctx
+  const { user, role, isAdmin, isManagement, divisions } = ctx
 
-  const db = isAdmin ? createAdminClient() : supabase
-  let projectQuery = db
+  const { searchParams } = new URL(req.url)
+  // mode=approved → export latest approved/verified revision per family
+  // mode=latest   → export latest revision per family regardless of status
+  const mode = searchParams.get('mode') === 'approved' ? 'approved' : 'latest'
+
+  const adminDb = createAdminClient()
+  const { data: project } = await adminDb
     .from('projects')
-    .select('id, name, client, location, project_number, contractor, main_contractor, consultant, user_id')
+    .select('id, name, client, location, project_number, contractor, main_contractor, consultant, user_id, division')
     .eq('id', projectId)
-  if (!isAdmin) projectQuery = projectQuery.eq('user_id', user.id)
-  const { data: project } = await projectQuery.single()
+    .single()
 
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
 
-  // Coordinators can only export verified or admin-approved reports
-  const statusFilter = role === 'coordinator'
+  const pjData = project as unknown as ProjectMeta & { division: string | null }
+  const hasDivAccess = divisions.length > 0 && pjData.division != null && divisions.includes(pjData.division)
+  if (!isAdmin && !isManagement && pjData.user_id !== user.id && !hasDivAccess) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  }
+
+  // Coordinators can only export verified or approved reports; mode=approved applies same filter for all roles
+  const approvedOnly = role === 'coordinator' || mode === 'approved'
+  const statusFilter = approvedOnly
     ? '("generating","error","review","pending_verification","needs_revision")'
     : '("generating","error")'
 
-  const { data: allReports } = await db
+  const { data: allReports } = await adminDb
     .from('compliance_reports')
     .select('id, title, product_family, revision, summary, created_at, verified_by, compliance_rows(*)')
     .eq('project_id', projectId)
@@ -260,7 +278,7 @@ async function exportProject(req: NextRequest, projectId: string) {
     .order('revision', { ascending: true })
 
   if (!allReports || allReports.length === 0) {
-    return NextResponse.json({ error: 'No reports found' }, { status: 404 })
+    return NextResponse.json({ error: 'No approved reports found' }, { status: 404 })
   }
 
   // Keep only the latest revision per product_family
@@ -271,9 +289,8 @@ async function exportProject(req: NextRequest, projectId: string) {
   const reports = Array.from(latestMap.values()) as unknown as ReportData[]
 
   // Look up creator + verifier names
-  const adminDb = createAdminClient()
   const profileIds = [
-    (project as { user_id: string }).user_id,
+    pjData.user_id,
     ...reports.map(r => r.verified_by).filter(Boolean),
   ]
   const { data: profileRows } = await adminDb
@@ -284,16 +301,16 @@ async function exportProject(req: NextRequest, projectId: string) {
     (profileRows ?? []).map(p => [p.id, (p.full_name as string | null) ?? 'Unknown'])
   )
 
-  const pj = project as unknown as ProjectMeta
+  const pj = pjData as unknown as ProjectMeta
   const workbook = buildWorkbook(pj, reports, profileMap)
 
   const buffer   = await workbook.xlsx.writeBuffer()
-  const safeName = pj.name.replace(/[^a-z0-9]/gi, '_')
+  const fileName = buildFileName(pj.project_number, pj.name)
 
   return new NextResponse(buffer, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${safeName}_Compliance.xlsx"`,
+      'Content-Disposition': `attachment; filename="${fileName}"`,
     },
   })
 }
@@ -302,19 +319,21 @@ async function exportProject(req: NextRequest, projectId: string) {
 async function exportReport(req: NextRequest, reportId: string) {
   const ctx = await getAuthContext()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { user, role, isAdmin, supabase } = ctx
+  const { user, role, isAdmin, isManagement, divisions } = ctx
 
-  const { data: report } = await supabase
+  const adminDb = createAdminClient()
+  const { data: report } = await adminDb
     .from('compliance_reports')
-    .select('*, projects!inner(id, name, client, location, project_number, contractor, main_contractor, consultant, user_id), compliance_rows(*)')
+    .select('*, projects!inner(id, name, client, location, project_number, contractor, main_contractor, consultant, user_id, division), compliance_rows(*)')
     .eq('id', reportId)
     .single()
 
   const r = report as unknown as ReportData & {
     status: string
-    projects: ProjectMeta & { id: string }
+    projects: ProjectMeta & { id: string; division: string | null }
   }
-  if (!r || (!isAdmin && r.projects?.user_id !== user.id)) {
+  const hasDivAccess = divisions.length > 0 && r?.projects?.division != null && divisions.includes(r.projects.division)
+  if (!r || (!isAdmin && !isManagement && r.projects?.user_id !== user.id && !hasDivAccess)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
@@ -326,7 +345,6 @@ async function exportReport(req: NextRequest, reportId: string) {
   }
 
   // Look up creator + verifier names
-  const adminDb = createAdminClient()
   const profileIds = [r.projects.user_id, ...(r.verified_by ? [r.verified_by] : [])]
   const { data: profileRows } = await adminDb
     .from('profiles')
@@ -339,7 +357,7 @@ async function exportReport(req: NextRequest, reportId: string) {
   const workbook = buildWorkbook(r.projects, [r], profileMap)
 
   const buffer   = await workbook.xlsx.writeBuffer()
-  const fileName = `${r.title.replace(/[^a-z0-9]/gi, '_')}.xlsx`
+  const fileName = buildFileName(r.projects.project_number, r.projects.name)
 
   return new NextResponse(buffer, {
     headers: {

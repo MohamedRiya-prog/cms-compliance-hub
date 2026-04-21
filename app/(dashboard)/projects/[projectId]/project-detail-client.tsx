@@ -31,6 +31,7 @@ interface Report {
   updated_at: string
   spec_document_id: string | null
   revision: number
+  verified_by: string | null
   compliance_rows: ComplianceRow[]
 }
 
@@ -59,11 +60,12 @@ interface Project {
   status: string
   created_at: string
   updated_at: string
+  user_id: string
   spec_documents: SpecDoc[]
   compliance_reports: Report[]
 }
 
-interface Props { project: Project; isAdmin?: boolean }
+interface Props { project: Project; isAdmin?: boolean; profileNames: Record<string, string> }
 
 const STATUS_BG: Record<string, string> = {
   comply:               'oklch(0.72 0.19 155 / 0.15)',
@@ -96,7 +98,7 @@ const reportStatusColor: Record<string, string> = {
 
 interface DocPreview { id: string; fileName: string; fileType: string; text: string; signedUrl?: string | null }
 
-export function ProjectDetailClient({ project, isAdmin }: Props) {
+export function ProjectDetailClient({ project, isAdmin, profileNames }: Props) {
   const router = useRouter()
   const [deleting,  setDeleting]  = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -106,6 +108,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
   const [docLoading,  setDocLoading]  = useState<string | null>(null)
   const [showDeleteProjectModal, setShowDeleteProjectModal] = useState(false)
   const [deleteReportTarget, setDeleteReportTarget] = useState<{ id: string; title: string } | null>(null)
+  const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
   const hasReports = project.compliance_reports.length > 0
 
@@ -180,10 +183,27 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
     }
   }
 
-  async function handleExportAll() {
+  // Detect if any family has an approved revision that isn't the latest
+  const hasApprovedVsLatestConflict = (() => {
+    const byFamily = new Map<string, Report[]>()
+    for (const r of sortedReports) {
+      if (!byFamily.has(r.product_family)) byFamily.set(r.product_family, [])
+      byFamily.get(r.product_family)!.push(r)
+    }
+    for (const revs of byFamily.values()) {
+      const sorted = [...revs].sort((a, b) => (a.revision ?? 0) - (b.revision ?? 0))
+      const latest = sorted[sorted.length - 1]
+      const hasApproved = sorted.some(r => ['verified', 'approved'].includes(r.status))
+      if (hasApproved && !['verified', 'approved'].includes(latest.status)) return true
+    }
+    return false
+  })()
+
+  async function doExportAll(mode: 'latest' | 'approved') {
+    setExportDialogOpen(false)
     setExporting(true)
     try {
-      const res = await fetch(`/api/compliance/export?projectId=${project.id}`)
+      const res = await fetch(`/api/compliance/export?projectId=${project.id}&mode=${mode}`)
       if (!res.ok) throw new Error('Export failed')
       const blob = await res.blob()
       const url  = URL.createObjectURL(blob)
@@ -194,6 +214,20 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
       URL.revokeObjectURL(url)
     } catch { /* silent */ } finally {
       setExporting(false)
+    }
+  }
+
+  function handleExportAll() {
+    // Non-admins can only export approved reports — API enforces this regardless
+    if (!isAdmin) {
+      doExportAll('approved')
+      return
+    }
+    // Admins: ask only when there's a meaningful choice (approved ≠ latest)
+    if (hasApprovedVsLatestConflict) {
+      setExportDialogOpen(true)
+    } else {
+      doExportAll('latest')
     }
   }
 
@@ -368,6 +402,11 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
               {project.main_contractor  && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {project.main_contractor}</span>}
               {!project.main_contractor && project.contractor && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {project.contractor}</span>}
               {project.consultant       && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>· {project.consultant}</span>}
+              {profileNames[project.user_id] && (
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  · Created by <strong style={{ color: 'var(--text-secondary)' }}>{profileNames[project.user_id]}</strong>
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -501,7 +540,7 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                                         <Link href={`/projects/${project.id}/reports/${report.id}`} className="flex-1 min-w-0">
                                           <motion.div whileHover={{ x: 2 }} className="flex items-center gap-2 px-2 py-1.5 cursor-pointer">
                                             <div className="flex-1 min-w-0">
-                                              <div className="flex items-center gap-1.5">
+                                              <div className="flex items-center gap-1.5 flex-wrap">
                                                 <p className="text-xs font-semibold shrink-0" style={{ color: 'var(--text-primary)' }}>
                                                   {revLabel(report.revision ?? 0)}
                                                 </p>
@@ -513,6 +552,12 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
                                                 <span className="text-xs capitalize shrink-0" style={{ color: reportStatusColor[report.status] ?? 'var(--text-muted)' }}>
                                                   · {report.status}
                                                 </span>
+                                                {report.verified_by && profileNames[report.verified_by] &&
+                                                  (report.status === 'verified' || report.status === 'approved') && (
+                                                  <span className="text-[10px] shrink-0 font-medium" style={{ color: 'var(--status-comply)' }}>
+                                                    · by {profileNames[report.verified_by]}
+                                                  </span>
+                                                )}
                                               </div>
                                               <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
                                                 {total} clauses · {formatRelativeTime(report.updated_at)}
@@ -928,6 +973,65 @@ export function ProjectDetailClient({ project, isAdmin }: Props) {
             </div>
           </motion.div>
         </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* ── Export dialog ── */}
+    <AnimatePresence>
+      {exportDialogOpen && (
+        <>
+          <motion.div
+            className="fixed inset-0 z-50"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            style={{ background: 'oklch(0 0 0 / 0.45)' }}
+            onClick={() => setExportDialogOpen(false)}
+          />
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.18 }}
+          >
+            <div
+              className="w-full max-w-sm rounded-2xl p-6"
+              style={{ background: 'var(--surface-1)', border: '1px solid var(--border-default)' }}
+              onClick={e => e.stopPropagation()}
+            >
+              <h2 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Export Compliance Report</h2>
+              <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>
+                Some families have newer revisions that are not yet approved. Choose which version to export.
+              </p>
+              <div className="space-y-3">
+                <button
+                  onClick={() => doExportAll('approved')}
+                  className="w-full text-left px-4 py-3.5 rounded-xl border transition-all hover:border-[var(--brand-primary)]"
+                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border-default)' }}
+                >
+                  <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--status-comply)' }}>Approved revisions</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Exports the latest verified or approved revision per product family.
+                  </p>
+                </button>
+                <button
+                  onClick={() => doExportAll('latest')}
+                  className="w-full text-left px-4 py-3.5 rounded-xl border transition-all hover:border-[var(--brand-primary)]"
+                  style={{ background: 'var(--surface-2)', borderColor: 'var(--border-default)' }}
+                >
+                  <p className="text-sm font-semibold mb-0.5" style={{ color: 'var(--brand-primary)' }}>Latest revisions</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    Exports the most recent revision per product family regardless of approval status.
+                  </p>
+                </button>
+              </div>
+              <button
+                onClick={() => setExportDialogOpen(false)}
+                className="mt-4 w-full py-2 rounded-xl text-xs font-medium transition-colors hover:bg-[var(--surface-3)]"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </motion.div>
+        </>
       )}
     </AnimatePresence>
     </>

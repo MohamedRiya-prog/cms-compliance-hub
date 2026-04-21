@@ -15,6 +15,19 @@ interface DetectedSection {
   text: string
 }
 
+// Maps detection family codes → representative individual product code (for division lookup)
+const DETECTION_FAMILY_REPR: Record<string, string> = {
+  BDD_PRD: 'BDD',
+  EVFD:    'EVFD',
+  EFD:     'EFD',
+  EFSD:    'EFSD',
+  ESD:     'ESD',
+  EVCD:    'VCD',
+  SA:      'SA',
+  FAL:     'FAL_A',
+  PRD:     'PRD',
+}
+
 export default function UploadPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = use(params)
   const router = useRouter()
@@ -34,20 +47,59 @@ export default function UploadPage({ params }: { params: Promise<{ projectId: st
     PRD: 'Barometric Relief Dampers',
   }
 
-  // Load product families from API on mount (adds custom products to the built-in list)
+  // Load user role + divisions, then product families
   useEffect(() => {
-    fetch('/api/admin/products')
-      .then(r => r.ok ? r.json() : [])
-      .then((rows: { family: string; label: string | null }[]) => {
-        const map: Record<string, string> = { ...BUILTIN_FAMILIES }
+    async function init() {
+      const { createClient } = await import('@/lib/supabase/client')
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      let isAdmin = false
+      let divisions: string[] = []
+      if (user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role, divisions')
+          .eq('id', user.id)
+          .single()
+        isAdmin = profile?.role === 'admin'
+        divisions = (profile as unknown as { divisions?: string[] } | null)?.divisions ?? []
+      }
+      try {
+        const res = await fetch('/api/admin/products')
+        const rows: { family: string; label: string | null; division: string | null }[] = res.ok ? await res.json() : []
+
+        // Build division map: product code → division
+        const divisionMap = new Map<string, string>()
         for (const row of rows) {
-          if (row.label && !(row.family in map)) {
-            map[row.family] = row.label
+          if (row.division) divisionMap.set(row.family, row.division)
+        }
+
+        const map: Record<string, string> = {}
+
+        // Filter built-in detection families by division
+        for (const [code, label] of Object.entries(BUILTIN_FAMILIES)) {
+          const reprCode = DETECTION_FAMILY_REPR[code] ?? code
+          const div = divisionMap.get(reprCode)
+          if (isAdmin || !divisions.length || !div || divisions.includes(div)) {
+            map[code] = label
           }
         }
+
+        // Add custom products filtered by division
+        for (const row of rows) {
+          if (row.label && !(row.family in BUILTIN_FAMILIES)) {
+            if (isAdmin || !divisions.length || !row.division || divisions.includes(row.division)) {
+              map[row.family] = row.label
+            }
+          }
+        }
+
         setProductFamilies(map)
-      })
-      .catch(() => setProductFamilies(BUILTIN_FAMILIES))
+      } catch {
+        setProductFamilies(isAdmin || !divisions.length ? BUILTIN_FAMILIES : {})
+      }
+    }
+    init()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const [file, setFile] = useState<File | null>(null)

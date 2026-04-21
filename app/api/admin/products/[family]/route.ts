@@ -30,7 +30,19 @@ export async function GET(
     .single()
 
   if (!data) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(data)
+
+  // Resolve updated_by UUID → display name
+  let updatedByName: string | null = null
+  if (data.updated_by) {
+    const { data: profile } = await admin
+      .from('profiles')
+      .select('full_name')
+      .eq('id', data.updated_by)
+      .single()
+    updatedByName = (profile as { full_name?: string | null } | null)?.full_name ?? null
+  }
+
+  return NextResponse.json({ ...data, updated_by_name: updatedByName })
 }
 
 export async function PUT(
@@ -54,30 +66,88 @@ export async function PUT(
   if (!content) return NextResponse.json({ error: 'content required' }, { status: 400 })
 
   const admin = createAdminClient()
+
+  // Check if a row already exists for this family
   const { data: existing } = await admin
     .from('product_data')
-    .select('version')
+    .select('id')
     .eq('family', family)
     .order('version', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
 
-  const insertPayload: Record<string, unknown> = {
-    family,
-    content,
-    version: (existing?.version ?? 0) + 1,
-    updated_by: user.id,
+  const updatePayload: Record<string, unknown> = { content, updated_by: user.id }
+  if (division !== undefined) updatePayload.division = division
+
+  let data, error
+  if (existing) {
+    // Update in-place — no more duplicate rows
+    ;({ data, error } = await admin
+      .from('product_data')
+      .update(updatePayload)
+      .eq('id', existing.id)
+      .select()
+      .single())
+  } else {
+    // First time saving this product — insert one row
+    ;({ data, error } = await admin
+      .from('product_data')
+      .insert({ family, ...updatePayload, version: 1 })
+      .select()
+      .single())
   }
-  if (division !== undefined) insertPayload.division = division
-
-  const { data, error } = await admin
-    .from('product_data')
-    .insert(insertPayload)
-    .select()
-    .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
+}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ family: string }> }
+) {
+  const { family } = await params
+  const user = await requireAdmin()
+  if (!user) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const { division } = await req.json()
+
+  const admin = createAdminClient()
+
+  // Check if any row exists for this family
+  const { data: existing } = await admin
+    .from('product_data')
+    .select('id')
+    .eq('family', family)
+    .order('version', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  let result, error
+  if (existing) {
+    // Update division in-place on the latest row
+    ;({ data: result, error } = await admin
+      .from('product_data')
+      .update({ division: division || null })
+      .eq('id', existing.id)
+      .select()
+      .single())
+  } else {
+    // Create a stub row with just the division — no content needed
+    ;({ data: result, error } = await admin
+      .from('product_data')
+      .insert({
+        family,
+        division: division || null,
+        content: '',
+        version: 1,
+        updated_by: user.id,
+      })
+      .select()
+      .single())
+  }
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(result)
 }
 
 export async function DELETE(

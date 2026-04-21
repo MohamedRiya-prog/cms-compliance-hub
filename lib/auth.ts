@@ -14,20 +14,24 @@ export async function getAuthContext() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role')
+    .select('role, divisions')
     .eq('id', user.id)
     .single()
 
-  const role = (profile?.role ?? 'coordinator') as 'admin' | 'coordinator' | 'engineer'
+  const role = (profile?.role ?? 'coordinator') as 'admin' | 'coordinator' | 'engineer' | 'management'
   const isAdmin = role === 'admin'
+  const isManagement = role === 'management'
+  const divisions: string[] = (profile as { divisions?: string[] | null } | null)?.divisions ?? []
 
   return {
     user,
     role,
     isAdmin,
-    // Use this for all data queries — bypasses RLS only when confirmed admin
+    isManagement,
+    divisions,
+    // Management gets admin-level read access (sees all data) but write routes block them separately
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    db: (isAdmin ? createAdminClient() : supabase) as ReturnType<typeof createAdminClient>,
+    db: (isAdmin || isManagement ? createAdminClient() : supabase) as ReturnType<typeof createAdminClient>,
     supabase,
   }
 }

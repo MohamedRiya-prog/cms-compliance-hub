@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Users, Shield, ClipboardCheck, Wrench, Search, X, Tag, Plus } from 'lucide-react'
+import { Users, Shield, ClipboardCheck, Wrench, Search, X, Tag } from 'lucide-react'
 import { formatRelativeTime } from '@/lib/utils'
 
 interface UserRow {
@@ -11,6 +11,7 @@ interface UserRow {
   fullName: string | null
   role: string
   divisions: string[]
+  functionalRole: string | null
   createdAt: string
   lastSignIn: string | null
 }
@@ -18,6 +19,7 @@ interface UserRow {
 interface Props {
   users: UserRow[]
   currentUserId: string
+  availableDivisions: string[]
 }
 
 const ROLE_CONFIG: Record<string, { label: string; icon: React.ElementType; color: string; bg: string; border: string; desc: string }> = {
@@ -46,9 +48,6 @@ const ROLE_CONFIG: Record<string, { label: string; icon: React.ElementType; colo
     desc: 'Reviews and verifies compliance reports',
   },
 }
-
-// Known divisions — grow over time
-const KNOWN_DIVISIONS = ['GD & ACC']
 
 function RoleBadge({ role }: { role: string }) {
   const cfg = ROLE_CONFIG[role] ?? ROLE_CONFIG.engineer
@@ -85,13 +84,11 @@ function DivisionTag({ label, onRemove }: { label: string; onRemove?: () => void
   )
 }
 
-export function UsersClient({ users: initialUsers, currentUserId }: Props) {
+export function UsersClient({ users: initialUsers, currentUserId, availableDivisions }: Props) {
   const [users, setUsers] = useState<UserRow[]>(initialUsers)
   const [search, setSearch] = useState('')
   const [updating, setUpdating] = useState<string | null>(null)
   const [error, setError] = useState('')
-  // Division editing state: userId → input value
-  const [divInput, setDivInput] = useState<Record<string, string>>({})
 
   const sq = search.trim().toLowerCase()
   const filtered = sq
@@ -141,13 +138,31 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
     }
   }
 
+  async function handleFunctionalRoleChange(userId: string, functionalRole: string | null) {
+    setUpdating(userId)
+    setError('')
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, functionalRole }),
+      })
+      if (!res.ok) {
+        const data = await res.json()
+        setError(data.error ?? 'Failed to update functional role')
+        return
+      }
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, functionalRole } : u))
+    } finally {
+      setUpdating(null)
+    }
+  }
+
   function addDivision(userId: string, div: string) {
     const user = users.find(u => u.id === userId)
     if (!user) return
-    const trimmed = div.trim()
-    if (!trimmed || user.divisions.includes(trimmed)) return
-    updateDivisions(userId, [...user.divisions, trimmed])
-    setDivInput(prev => ({ ...prev, [userId]: '' }))
+    if (!div || user.divisions.includes(div)) return
+    updateDivisions(userId, [...user.divisions, div])
   }
 
   function removeDivision(userId: string, div: string) {
@@ -241,7 +256,7 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
         <div
           className="grid text-xs font-medium px-5 py-2.5 border-b"
           style={{
-            gridTemplateColumns: '1.2fr 110px 140px 1fr 90px',
+            gridTemplateColumns: '1.2fr 110px 160px 1fr 90px',
             color: 'var(--text-muted)',
             background: 'var(--surface-1)',
             borderColor: 'var(--border-subtle)',
@@ -268,7 +283,7 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
               transition={{ delay: i * 0.02 }}
               className="grid items-start px-5 py-3.5 border-b"
               style={{
-                gridTemplateColumns: '1.2fr 110px 140px 1fr 90px',
+                gridTemplateColumns: '1.2fr 110px 160px 1fr 90px',
                 background: 'var(--surface-0)',
                 borderColor: 'var(--border-subtle)',
               }}
@@ -302,7 +317,7 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
               </div>
 
               {/* Role selector */}
-              <div className="pt-0.5">
+              <div className="pt-0.5 space-y-1.5">
                 <select
                   value={u.role}
                   onChange={e => handleRoleChange(u.id, e.target.value)}
@@ -319,6 +334,24 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
                   <option value="engineer">Engineer</option>
                   <option value="admin">Admin</option>
                 </select>
+                {u.role === 'admin' && (
+                  <select
+                    value={u.functionalRole ?? ''}
+                    onChange={e => handleFunctionalRoleChange(u.id, e.target.value || null)}
+                    disabled={updating === u.id}
+                    className="text-[10px] px-2 py-1 rounded-lg outline-none w-full"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border-default)',
+                      color: 'var(--text-muted)',
+                    }}
+                    title="Also acts as"
+                  >
+                    <option value="">Also acts as: None</option>
+                    <option value="engineer">Also acts as: Engineer</option>
+                    <option value="coordinator">Also acts as: Coordinator</option>
+                  </select>
+                )}
               </div>
 
               {/* Divisions */}
@@ -335,33 +368,20 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
                     <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>No divisions</span>
                   )}
                 </div>
-                {u.id !== currentUserId && (
-                  <div className="flex gap-1">
-                    <input
-                      list={`divs-${u.id}`}
-                      value={divInput[u.id] ?? ''}
-                      onChange={e => setDivInput(prev => ({ ...prev, [u.id]: e.target.value }))}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') { e.preventDefault(); addDivision(u.id, divInput[u.id] ?? '') }
-                      }}
-                      placeholder="Add division…"
-                      className="text-[10px] px-2 py-1 rounded-lg outline-none flex-1 min-w-0"
-                      style={{ background: 'var(--surface-2)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
-                    />
-                    <datalist id={`divs-${u.id}`}>
-                      {KNOWN_DIVISIONS.filter(d => !(u.divisions ?? []).includes(d)).map(d => (
-                        <option key={d} value={d} />
-                      ))}
-                    </datalist>
-                    <button
-                      onClick={() => addDivision(u.id, divInput[u.id] ?? '')}
-                      disabled={updating === u.id || !(divInput[u.id] ?? '').trim()}
-                      className="px-1.5 rounded-lg"
-                      style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}
-                    >
-                      <Plus size={10} />
-                    </button>
-                  </div>
+                {u.id !== currentUserId && availableDivisions.filter(d => !(u.divisions ?? []).includes(d)).length > 0 && (
+                  <select
+                    value=""
+                    onChange={e => { if (e.target.value) addDivision(u.id, e.target.value) }}
+                    disabled={updating === u.id}
+                    className="text-[10px] px-2 py-1 rounded-lg outline-none w-full"
+                    style={{ background: 'var(--surface-2)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}
+                  >
+                    <option value="">Add division…</option>
+                    {availableDivisions
+                      .filter(d => !(u.divisions ?? []).includes(d))
+                      .map(d => <option key={d} value={d}>{d}</option>)
+                    }
+                  </select>
                 )}
               </div>
 
@@ -375,7 +395,7 @@ export function UsersClient({ users: initialUsers, currentUserId }: Props) {
       </div>
 
       <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-        {users.length} user{users.length !== 1 ? 's' : ''} total · You cannot change your own role
+        {users.length} user{users.length !== 1 ? 's' : ''} total · You cannot change your own primary role
       </p>
     </div>
   )

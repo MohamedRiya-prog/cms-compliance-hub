@@ -13,7 +13,8 @@ export async function POST(
   const { reportId } = await params
   const ctx = await getAuthContext()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { user, isAdmin, db } = ctx
+  if (ctx.isManagement) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { user, isAdmin, divisions, db } = ctx
 
   let instructions: string | undefined
   let createRevision = false
@@ -27,7 +28,7 @@ export async function POST(
 
   const { data: report } = await db
     .from('compliance_reports')
-    .select('id, spec_text, product_family, title, spec_document_id, project_id, revision, projects!inner(user_id)')
+    .select('id, spec_text, product_family, title, spec_document_id, project_id, revision, status, projects!inner(user_id, division)')
     .eq('id', reportId)
     .single()
 
@@ -39,14 +40,21 @@ export async function POST(
     spec_document_id: string | null
     project_id: string
     revision: number
-    projects: { user_id: string }
+    status: string
+    projects: { user_id: string; division: string | null }
   }
 
-  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id)) {
+  const hasDivAccess = divisions.length > 0 && typed?.projects?.division != null && divisions.includes(typed.projects.division)
+  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id && !hasDivAccess)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
   if (!typed.spec_text) {
     return NextResponse.json({ error: 'No spec text stored for this report' }, { status: 400 })
+  }
+
+  // Locked reports always create a new revision
+  if (typed.status === 'verified' || typed.status === 'approved') {
+    createRevision = true
   }
 
   // If creating a new revision, insert a new report record first

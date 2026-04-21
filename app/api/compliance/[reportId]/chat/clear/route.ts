@@ -8,16 +8,18 @@ export async function DELETE(
   const { reportId } = await params
   const ctx = await getAuthContext()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { user, isAdmin, db } = ctx
+  if (ctx.isManagement) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { user, isAdmin, divisions, db } = ctx
 
   const { data: report } = await db
     .from('compliance_reports')
-    .select('id, projects!inner(user_id)')
+    .select('id, projects!inner(user_id, division)')
     .eq('id', reportId)
     .single()
 
-  const typed = report as unknown as { id: string; projects: { user_id: string } }
-  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id)) {
+  const typed = report as unknown as { id: string; projects: { user_id: string; division: string | null } }
+  const hasDivAccess = divisions.length > 0 && typed?.projects?.division != null && divisions.includes(typed.projects.division)
+  if (!typed || (!isAdmin && typed.projects?.user_id !== user.id && !hasDivAccess)) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 

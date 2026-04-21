@@ -21,6 +21,13 @@ interface ProjectDetail {
   lastActivity: string
 }
 
+interface ProductStat {
+  family: string
+  totalClauses: number
+  comply: number
+  complianceRate: number
+}
+
 interface ConsultantStat {
   consultant: string
   projects: number
@@ -32,6 +39,7 @@ interface ConsultantStat {
   complianceRate: number
   topFailingFamilies: string[]
   lastActivity: string
+  productStats: ProductStat[]
   projectDetails: ProjectDetail[]
 }
 
@@ -290,6 +298,40 @@ export function ConsultantsClient({ consultants }: Props) {
                         className="border-t"
                         style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-0)' }}
                       >
+                        {/* Product-wise compliance breakdown */}
+                        {c.productStats.length > 0 && (
+                          <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                            <p className="text-xs font-semibold mb-2.5 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                              Product Performance
+                            </p>
+                            <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))' }}>
+                              {c.productStats.map(ps => (
+                                <div key={ps.family} className="flex items-center gap-2">
+                                  <span
+                                    className="text-xs font-mono shrink-0 w-14 truncate"
+                                    style={{ color: 'var(--text-secondary)' }}
+                                    title={ps.family}
+                                  >
+                                    {ps.family}
+                                  </span>
+                                  <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--surface-3)' }}>
+                                    <div
+                                      className="h-full rounded-full"
+                                      style={{ width: `${ps.complianceRate}%`, background: barColor(ps.complianceRate) }}
+                                    />
+                                  </div>
+                                  <span
+                                    className="text-xs font-bold shrink-0 w-8 text-right"
+                                    style={{ color: rateColor(ps.complianceRate) }}
+                                  >
+                                    {ps.complianceRate}%
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Per-consultant project search */}
                         <div className="relative px-5 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                           <Search size={12} className="absolute left-8 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-muted)' }} />

@@ -39,6 +39,7 @@ interface ProductFamily {
   family: string
   label: string
   group: string
+  division: string | undefined
   isCustom: boolean
 }
 
@@ -46,10 +47,12 @@ interface AddForm {
   code: string
   label: string
   group: string
+  division: string
+  detectionKeywords: string
   content: string
 }
 
-const emptyForm = (): AddForm => ({ code: '', label: '', group: '', content: '' })
+const emptyForm = (): AddForm => ({ code: '', label: '', group: '', division: '', detectionKeywords: '', content: '' })
 
 export default function ProductsPage() {
   const [families, setFamilies] = useState<ProductFamily[]>([])
@@ -62,7 +65,12 @@ export default function ProductsPage() {
   const [error, setError] = useState('')
   const [isAdmin, setIsAdmin] = useState(false)
   const [roleLoading, setRoleLoading] = useState(true)
+  const [userDivisions, setUserDivisions] = useState<string[]>([])
+  const [availableDivisions, setAvailableDivisions] = useState<string[]>([])
   const [mode, setMode] = useState<'preview' | 'edit'>('preview')
+  const [selectedDivision, setSelectedDivision] = useState<string>('')
+  const [lastUpdatedBy, setLastUpdatedBy] = useState<string>('')
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string>('')
 
   // Add product modal
   const [addOpen, setAddOpen] = useState(false)
@@ -83,14 +91,24 @@ export default function ProductsPage() {
       if (!user) { setRoleLoading(false); return }
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role')
+        .select('role, divisions')
         .eq('id', user.id)
         .single()
       setIsAdmin(profile?.role === 'admin')
+      setUserDivisions((profile as unknown as { divisions?: string[] } | null)?.divisions ?? [])
       setRoleLoading(false)
     }
     fetchRole()
   }, [])
+
+  // Load available divisions for the Add Product modal (admin only)
+  useEffect(() => {
+    if (roleLoading || !isAdmin) return
+    fetch('/api/admin/divisions')
+      .then(r => r.json())
+      .then((data: { name: string }[]) => setAvailableDivisions(data.map(d => d.name)))
+      .catch(() => {})
+  }, [isAdmin, roleLoading])
 
   // Load families from API
   async function fetchFamilies() {
@@ -98,19 +116,32 @@ export default function ProductsPage() {
     try {
       const res = await fetch('/api/admin/products')
       if (!res.ok) return
-      const rows: { family: string; label: string | null; product_group: string | null }[] = await res.json()
+      const rows: { family: string; label: string | null; product_group: string | null; division: string | null; version: number | null }[] = await res.json()
+
+      // Build a map: family code → division (latest version per family takes precedence)
+      const divisionMap = new Map<string, string>()
+      const versionMap = new Map<string, number>()
+      for (const row of rows) {
+        const currentVersion = versionMap.get(row.family) ?? -1
+        if ((row.version ?? 0) > currentVersion) {
+          versionMap.set(row.family, row.version ?? 0)
+          if (row.division) divisionMap.set(row.family, row.division)
+          else divisionMap.delete(row.family)
+        }
+      }
 
       // Build merged list
       const seen = new Set<string>()
       const list: ProductFamily[] = []
 
-      // Built-ins first (in order)
+      // Built-ins first (in order) — division comes from DB row if saved
       for (const code of Object.keys(BUILTIN_META)) {
         seen.add(code)
         list.push({
           family: code,
           label: BUILTIN_META[code].label,
           group: BUILTIN_META[code].group,
+          division: divisionMap.get(code),
           isCustom: false,
         })
       }
@@ -122,6 +153,7 @@ export default function ProductsPage() {
             family: row.family,
             label: row.label,
             group: row.product_group ?? 'Custom',
+            division: row.division ?? undefined,
             isCustom: true,
           })
         }
@@ -139,12 +171,16 @@ export default function ProductsPage() {
   async function loadFamily(family: string) {
     setLoading(true)
     setContent('')
+    setLastUpdatedBy('')
+    setLastUpdatedAt('')
     setError('')
     try {
       const res = await fetch(`/api/admin/products/${family}`)
-      if (res.status !== 404) {
+      if (res.ok) {
         const data = await res.json()
         setContent(data?.content ?? '')
+        setLastUpdatedAt(data?.updated_at ?? '')
+        setLastUpdatedBy(data?.updated_by_name ?? '')
       }
     } catch {
       setError('Failed to load product data')
@@ -155,20 +191,39 @@ export default function ProductsPage() {
 
   useEffect(() => { loadFamily(selectedFamily) }, [selectedFamily])
 
+  // Sync selectedDivision when the selected family changes
+  useEffect(() => {
+    const meta = families.find(f => f.family === selectedFamily)
+    setSelectedDivision(meta?.division ?? '')
+  }, [selectedFamily, families])
+
   async function handleSave() {
     setSaving(true)
     setError('')
-    const res = await fetch(`/api/admin/products/${selectedFamily}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    })
+    let res: Response
+    if (content.trim()) {
+      // Full save — new content version, also stores division
+      res = await fetch(`/api/admin/products/${selectedFamily}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content, division: selectedDivision || undefined }),
+      })
+    } else {
+      // No content — division-only update (PATCH creates stub row if needed)
+      res = await fetch(`/api/admin/products/${selectedFamily}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ division: selectedDivision || null }),
+      })
+    }
     if (!res.ok) {
       const d = await res.json()
       setError(d.error ?? 'Failed to save')
     } else {
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+      await fetchFamilies() // refresh division badges
+      await loadFamily(selectedFamily) // refresh updated_by name
     }
     setSaving(false)
   }
@@ -179,7 +234,14 @@ export default function ProductsPage() {
     const res = await fetch('/api/admin/products', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(addForm),
+      body: JSON.stringify({
+        family: addForm.code,
+        label: addForm.label,
+        product_group: addForm.group,
+        division: addForm.division,
+        detection_keywords: addForm.detectionKeywords || undefined,
+        content: addForm.content,
+      }),
     })
     const d = await res.json()
     if (!res.ok) {
@@ -211,12 +273,17 @@ export default function ProductsPage() {
     setSelectedFamily('ALL')
   }
 
+  // For non-admins, only show products in their assigned divisions
+  const visibleFamilies = (!roleLoading && !isAdmin && userDivisions.length > 0)
+    ? families.filter(f => f.division != null && userDivisions.includes(f.division))
+    : families
+
   // Build grouped list for sidebar
-  const customFamilies = families.filter(f => f.isCustom)
+  const customFamilies = visibleFamilies.filter(f => f.isCustom)
   const customGroups = [...new Set(customFamilies.map(f => f.group))]
   const allGroups = [...BUILTIN_GROUPS, ...customGroups.filter(g => !BUILTIN_GROUPS.includes(g))]
 
-  const selectedMeta = families.find(f => f.family === selectedFamily)
+  const selectedMeta = visibleFamilies.find(f => f.family === selectedFamily)
   const selectedLabel = selectedMeta?.label ?? selectedFamily
   const selectedIsCustom = selectedMeta?.isCustom ?? false
 
@@ -313,7 +380,7 @@ export default function ProductsPage() {
               </div>
             ) : (
               allGroups.map(group => {
-                const groupFamilies = families.filter(f => f.group === group)
+                const groupFamilies = visibleFamilies.filter(f => f.group === group)
                 if (!groupFamilies.length) return null
                 return (
                   <div key={group}>
@@ -336,15 +403,25 @@ export default function ProductsPage() {
                             fontWeight: selectedFamily === f.family ? 500 : 400,
                           }}
                         >
-                          <span>{f.label}</span>
-                          {f.isCustom && (
-                            <span
-                              className="text-xs px-1.5 py-0.5 rounded shrink-0 ml-1"
-                              style={{ background: 'oklch(0.65 0.18 270 / 0.15)', color: 'var(--brand-primary)', fontSize: '10px' }}
-                            >
-                              custom
-                            </span>
-                          )}
+                          <span className="truncate">{f.label}</span>
+                          <span className="flex items-center gap-1 shrink-0 ml-1">
+                            {isAdmin && f.division && (
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded"
+                                style={{ background: 'oklch(0.55 0.15 220 / 0.12)', color: 'var(--text-muted)', fontSize: '9px' }}
+                              >
+                                {f.division}
+                              </span>
+                            )}
+                            {f.isCustom && (
+                              <span
+                                className="text-xs px-1.5 py-0.5 rounded"
+                                style={{ background: 'oklch(0.65 0.18 270 / 0.15)', color: 'var(--brand-primary)', fontSize: '10px' }}
+                              >
+                                custom
+                              </span>
+                            )}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -374,12 +451,31 @@ export default function ProductsPage() {
 
             {/* Right header with mode toggle */}
             <div
-              className="px-5 py-2 shrink-0 border-b flex items-center justify-between"
+              className="px-5 py-2 shrink-0 border-b flex items-center justify-between gap-3"
               style={{ borderColor: 'var(--border-default)' }}
             >
-              <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+              <span className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
                 {selectedLabel}
               </span>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {isAdmin && availableDivisions.length > 0 && (
+                  <select
+                    value={selectedDivision}
+                    onChange={e => setSelectedDivision(e.target.value)}
+                    className="px-2 py-1 rounded-lg text-xs outline-none"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border-default)',
+                      color: selectedDivision ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <option value="">No division</option>
+                    {availableDivisions.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                )}
 
               {(isAdmin || mode === 'preview') && (
                 <div
@@ -412,7 +508,20 @@ export default function ProductsPage() {
                   )}
                 </div>
               )}
+              </div>
             </div>
+
+            {/* Last updated meta */}
+            {(lastUpdatedBy || lastUpdatedAt) && (
+              <div
+                className="px-5 py-1.5 text-xs border-b shrink-0"
+                style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}
+              >
+                Last updated
+                {lastUpdatedBy && <> by <span style={{ color: 'var(--text-secondary)' }}>{lastUpdatedBy}</span></>}
+                {lastUpdatedAt && <> · {new Date(lastUpdatedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</>}
+              </div>
+            )}
 
             {/* Content */}
             <div className="flex-1 overflow-hidden">
@@ -559,6 +668,47 @@ export default function ProductsPage() {
 
                 <div>
                   <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Division <span style={{ color: 'var(--status-not-comply)' }}>*</span>
+                  </label>
+                  <select
+                    value={addForm.division}
+                    onChange={e => setAddForm(f => ({ ...f, division: e.target.value }))}
+                    className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border-default)',
+                      color: addForm.division ? 'var(--text-primary)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <option value="">Select division…</option>
+                    {availableDivisions.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
+                    Detection Keywords <span style={{ color: 'var(--text-muted)' }}>(optional)</span>
+                  </label>
+                  <input
+                    value={addForm.detectionKeywords}
+                    onChange={e => setAddForm(f => ({ ...f, detectionKeywords: e.target.value }))}
+                    placeholder="e.g. ceiling fan, exhaust fan, fan coil"
+                    className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                    style={{
+                      background: 'var(--surface-2)',
+                      border: '1px solid var(--border-default)',
+                      color: 'var(--text-primary)',
+                    }}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Comma-separated words/phrases that identify this product in a spec document.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>
                     Initial Content <span style={{ color: 'var(--text-muted)' }}>(optional)</span>
                   </label>
                   <textarea
@@ -592,7 +742,7 @@ export default function ProductsPage() {
                 </button>
                 <motion.button
                   onClick={handleAdd}
-                  disabled={adding || !addForm.code.trim() || !addForm.label.trim()}
+                  disabled={adding || !addForm.code.trim() || !addForm.label.trim() || !addForm.division.trim()}
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.98 }}
                   className="flex-1 py-2 rounded-lg text-sm font-semibold"

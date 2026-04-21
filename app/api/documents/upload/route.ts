@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { getAuthContext } from '@/lib/auth'
 import { parseDocument, detectSections } from '@/lib/document-parser'
 import { computeTextHash } from '@/lib/utils'
 
@@ -14,9 +14,10 @@ const EXT_MAP: Record<string, string> = {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ctx = await getAuthContext()
+  if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (ctx.isManagement) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const { user, isAdmin, divisions } = ctx
 
   const formData = await req.formData()
   const file = formData.get('file') as File | null
@@ -30,21 +31,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'File too large (max 10MB)' }, { status: 400 })
   }
 
-  // Verify user owns the project
-  const { data: project } = await supabase
+  // Verify user owns the project or is in the same division
+  const admin = createAdminClient()
+  const { data: project } = await admin
     .from('projects')
-    .select('id')
+    .select('id, user_id, division')
     .eq('id', projectId)
-    .eq('user_id', user.id)
     .single()
 
-  if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  const pj = project as { id: string; user_id: string; division: string | null } | null
+  const hasDivAccess = divisions.length > 0 && pj?.division != null && divisions.includes(pj.division)
+  if (!pj || (!isAdmin && pj.user_id !== user.id && !hasDivAccess)) {
+    return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  }
 
   const fileType = EXT_MAP[file.type] ?? 'text'
   const storagePath = `${user.id}/${projectId}/${Date.now()}-${file.name}`
 
   // Upload to Supabase Storage
-  const admin = createAdminClient()
   const buffer = Buffer.from(await file.arrayBuffer())
 
   const { error: uploadError } = await admin.storage
@@ -67,7 +71,7 @@ export async function POST(req: NextRequest) {
   const extractedSections = detectSections(extractedText)
 
   // Save to database
-  const { data: doc, error: dbError } = await supabase
+  const { data: doc, error: dbError } = await admin
     .from('spec_documents')
     .insert({
       project_id: projectId,

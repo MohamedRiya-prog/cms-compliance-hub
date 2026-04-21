@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, X } from 'lucide-react'
@@ -14,9 +14,13 @@ const TYPE_LABELS: Record<CompanyType, string> = {
   main_contractor: 'Main Contractor',
   consultant:      'Consultant',
 }
+
 const ALL_TYPES: CompanyType[] = ['contractor', 'main_contractor', 'consultant']
 
-interface RequestModal { name: string; forType: CompanyType }
+interface RequestModal {
+  name: string
+  forType: CompanyType
+}
 
 async function searchCompanies(query: string, type: string) {
   const params = new URLSearchParams({ search: query, type, limit: '5' })
@@ -25,39 +29,43 @@ async function searchCompanies(query: string, type: string) {
   return Array.isArray(d?.data) ? d.data : []
 }
 
-interface Project {
-  id: string; name: string; client: string | null; location: string | null;
-  project_number: string | null; description: string | null; status: string;
-  contractor: string | null; main_contractor: string | null; consultant: string | null;
-  division: string | null;
+interface Props {
+  availableDivisions: string[]
 }
 
-export function ProjectSettingsClient({ project, availableDivisions }: { project: Project; availableDivisions: string[] }) {
+export function NewProjectClient({ availableDivisions }: Props) {
   const router = useRouter()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [form, setForm] = useState({
-    name:           project.name,
-    division:       project.division        ?? '',
-    client:         project.client         ?? '',
-    location:       project.location       ?? '',
-    projectNumber:  project.project_number ?? '',
-    contractor:     project.contractor     ?? '',
-    mainContractor: project.main_contractor ?? '',
-    consultant:     project.consultant     ?? '',
-    description:    project.description   ?? '',
+    name: '',
+    division: availableDivisions.length === 1 ? availableDivisions[0] : '',  // auto-select if only one option
+    client: '',
+    location: '',
+    projectNumber: '',
+    contractor: '',
+    mainContractor: '',
+    consultant: '',
+    description: '',
   })
-  const [saving, setSaving] = useState(false)
-  const [saved,  setSaved]  = useState(false)
 
-  // Request modal
+  // Request modal state
   const [requestModal, setRequestModal] = useState<RequestModal | null>(null)
-  const [reqTypes,     setReqTypes]     = useState<CompanyType[]>([])
-  const [reqCity,      setReqCity]      = useState('')
-  const [reqCountry,   setReqCountry]   = useState('')
-  const [reqSaving,    setReqSaving]    = useState(false)
-  const [reqDone,      setReqDone]      = useState(false)
-  const [reqError,     setReqError]     = useState('')
+  const [reqTypes, setReqTypes]         = useState<CompanyType[]>([])
+  const [reqCity, setReqCity]           = useState('')
+  const [reqCountry, setReqCountry]     = useState('')
+  const [reqSaving, setReqSaving]       = useState(false)
+  const [reqDone, setReqDone]           = useState(false)
+  const [reqError, setReqError]         = useState('')
 
-  function set(field: string, value: string) {
+  useEffect(() => {
+    fetch('/api/projects/next-number')
+      .then(r => r.json())
+      .then(d => { if (d.projectNumber) setForm(f => ({ ...f, projectNumber: d.projectNumber })) })
+      .catch(() => {})
+  }, [])
+
+  function handleChange(field: string, value: string) {
     setForm(f => ({ ...f, [field]: value }))
   }
 
@@ -85,16 +93,18 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
     if (!requestModal || reqTypes.length === 0) return
     setReqSaving(true)
     setReqError('')
+
     const res = await fetch('/api/companies/request', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name:    requestModal.name,
         types:   reqTypes,
-        city:    reqCity    || undefined,
+        city:    reqCity || undefined,
         country: reqCountry || undefined,
       }),
     })
+
     if (!res.ok) {
       const d = await res.json()
       setReqError(d.error ?? 'Failed to submit')
@@ -105,49 +115,63 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
     setReqSaving(false)
   }
 
-  async function handleSave(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setSaving(true)
-    await fetch(`/api/projects/${project.id}`, {
-      method: 'PATCH',
+    if (!form.division) { setError('Please select a division.'); return }
+    setLoading(true)
+    setError('')
+
+    const res = await fetch('/api/projects', {
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     })
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
-    router.refresh()
+
+    if (!res.ok) {
+      const data = await res.json()
+      setError(data.error ?? 'Failed to create project')
+      setLoading(false)
+      return
+    }
+
+    const project = await res.json()
+    router.push(`/projects/${project.id}`)
   }
 
-  const inputStyle = {
-    width: '100%', padding: '10px 14px', borderRadius: '8px', fontSize: '14px',
-    background: 'var(--surface-2)', border: '1px solid var(--border-default)',
-    color: 'var(--text-primary)', outline: 'none',
-  } as React.CSSProperties
-
   return (
-    <div className="p-6 max-w-3xl">
-      <Link href={`/projects/${project.id}`}>
-        <button className="flex items-center gap-2 text-sm mb-6 hover:opacity-80" style={{ color: 'var(--text-muted)' }}>
-          <ArrowLeft size={14} /> Back to Project
+    <div className="p-6 max-w-4xl mx-auto">
+      <Link href="/">
+        <button className="flex items-center gap-2 text-sm mb-6 hover:opacity-80 transition-opacity" style={{ color: 'var(--text-muted)' }}>
+          <ArrowLeft size={14} /> Back to Dashboard
         </button>
       </Link>
-      <h1 className="text-xl font-semibold mb-5" style={{ color: 'var(--text-primary)' }}>Project Settings</h1>
 
-      <form onSubmit={handleSave} className="space-y-4">
-        {/* Project Name */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Project Name *</label>
-          <input type="text" value={form.name} onChange={e => set('name', e.target.value)} required style={inputStyle} />
-        </div>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.35 }}
+      >
+        <h1 className="text-xl font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>New Project</h1>
+        <p className="text-sm mb-6" style={{ color: 'var(--text-muted)' }}>Create a project to organize compliance reports</p>
 
-        {/* Division */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Division</label>
-          {availableDivisions.length > 0 ? (
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Field label="Project Name *">
+            <input
+              type="text"
+              value={form.name}
+              onChange={e => handleChange('name', e.target.value)}
+              required
+              placeholder="Al Maktoum Airport Terminal 2"
+              style={inputStyle}
+            />
+          </Field>
+
+          {/* Division */}
+          <Field label="Division *">
             <select
               value={form.division}
-              onChange={e => set('division', e.target.value)}
+              onChange={e => handleChange('division', e.target.value)}
+              required
               style={{ ...inputStyle, cursor: 'pointer' }}
             >
               <option value="">Select division…</option>
@@ -155,84 +179,114 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
-          ) : (
-            <input type="text" value={form.division} onChange={e => set('division', e.target.value)} placeholder="e.g. GD & ACC" style={inputStyle} />
+          </Field>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Client">
+              <input
+                type="text"
+                value={form.client}
+                onChange={e => handleChange('client', e.target.value)}
+                placeholder="Dubai Aviation Engineering"
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Location">
+              <input
+                type="text"
+                value={form.location}
+                onChange={e => handleChange('location', e.target.value)}
+                placeholder="Dubai, UAE"
+                style={inputStyle}
+              />
+            </Field>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Field label="Contractor">
+              <SearchableSelect
+                onSearch={q => searchCompanies(q, 'contractor')}
+                onRequestAdd={name => openRequest(name, 'contractor')}
+                value={form.contractor}
+                onChange={v => handleChange('contractor', v)}
+                placeholder="Search contractor…"
+              />
+            </Field>
+            <Field label="Main Contractor">
+              <SearchableSelect
+                onSearch={q => searchCompanies(q, 'main_contractor')}
+                onRequestAdd={name => openRequest(name, 'main_contractor')}
+                value={form.mainContractor}
+                onChange={v => handleChange('mainContractor', v)}
+                placeholder="Search main contractor…"
+              />
+            </Field>
+            <Field label="Consultant">
+              <SearchableSelect
+                onSearch={q => searchCompanies(q, 'consultant')}
+                onRequestAdd={name => openRequest(name, 'consultant')}
+                value={form.consultant}
+                onChange={v => handleChange('consultant', v)}
+                placeholder="Search consultant…"
+              />
+            </Field>
+          </div>
+
+          <Field label="Project Number">
+            <div
+              className="flex items-center px-3.5 py-2.5 rounded-lg text-sm font-mono"
+              style={{
+                background: 'var(--surface-1)',
+                border: '1px solid var(--border-subtle)',
+                color: form.projectNumber ? 'var(--brand-primary)' : 'var(--text-muted)',
+              }}
+            >
+              {form.projectNumber || 'Generating…'}
+            </div>
+          </Field>
+
+          <Field label="Description">
+            <textarea
+              value={form.description}
+              onChange={e => handleChange('description', e.target.value)}
+              placeholder="Optional project notes…"
+              rows={3}
+              className="resize-none"
+              style={inputStyle}
+            />
+          </Field>
+
+          {error && (
+            <p className="text-sm px-3 py-2 rounded-lg" style={{ background: 'oklch(0.68 0.22 25 / 0.1)', color: 'var(--status-not-comply)', border: '1px solid oklch(0.68 0.22 25 / 0.2)' }}>
+              {error}
+            </p>
           )}
-        </div>
 
-        {/* Client + Location */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Client</label>
-            <input type="text" value={form.client} onChange={e => set('client', e.target.value)} style={inputStyle} />
+          <div className="flex gap-3 pt-2">
+            <Link href="/" className="flex-1">
+              <button
+                type="button"
+                className="w-full py-2.5 rounded-lg text-sm font-medium transition-all"
+                style={{ background: 'var(--surface-2)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+              >
+                Cancel
+              </button>
+            </Link>
+            <motion.button
+              type="submit"
+              disabled={loading}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.98 }}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold"
+              style={{ background: 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)', cursor: loading ? 'not-allowed' : 'pointer' }}
+            >
+              {loading ? 'Creating…' : 'Create Project'}
+            </motion.button>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Location</label>
-            <input type="text" value={form.location} onChange={e => set('location', e.target.value)} style={inputStyle} />
-          </div>
-        </div>
+        </form>
+      </motion.div>
 
-        {/* Contractor / Main Contractor / Consultant */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Contractor</label>
-            <SearchableSelect
-              onSearch={q => searchCompanies(q, 'contractor')}
-              onRequestAdd={name => openRequest(name, 'contractor')}
-              value={form.contractor}
-              onChange={v => set('contractor', v)}
-              placeholder="Search contractor…"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Main Contractor</label>
-            <SearchableSelect
-              onSearch={q => searchCompanies(q, 'main_contractor')}
-              onRequestAdd={name => openRequest(name, 'main_contractor')}
-              value={form.mainContractor}
-              onChange={v => set('mainContractor', v)}
-              placeholder="Search main contractor…"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Consultant</label>
-            <SearchableSelect
-              onSearch={q => searchCompanies(q, 'consultant')}
-              onRequestAdd={name => openRequest(name, 'consultant')}
-              value={form.consultant}
-              onChange={v => set('consultant', v)}
-              placeholder="Search consultant…"
-            />
-          </div>
-        </div>
-
-        {/* Project Number — read-only */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Project Number</label>
-          <div className="px-3.5 py-2.5 rounded-lg text-sm font-mono" style={{ background: 'var(--surface-1)', border: '1px solid var(--border-subtle)', color: 'var(--brand-primary)' }}>
-            {form.projectNumber || '—'}
-          </div>
-        </div>
-
-        {/* Description */}
-        <div>
-          <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Description</label>
-          <textarea value={form.description} onChange={e => set('description', e.target.value)} rows={3} className="resize-none" style={inputStyle} />
-        </div>
-
-        <motion.button
-          type="submit"
-          disabled={saving}
-          whileHover={{ scale: 1.01 }}
-          whileTap={{ scale: 0.98 }}
-          className="px-4 py-2.5 rounded-lg text-sm font-semibold"
-          style={{ background: saved ? 'var(--status-comply)' : 'var(--brand-primary)', color: 'oklch(0.98 0.002 260)' }}
-        >
-          {saved ? 'Saved!' : saving ? 'Saving…' : 'Save Changes'}
-        </motion.button>
-      </form>
-
-      {/* Request modal — same as new project form */}
+      {/* Request modal */}
       <AnimatePresence>
         {requestModal && (
           <motion.div
@@ -256,7 +310,9 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
                   <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Request to add company</h2>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>An admin will review and approve</p>
                 </div>
-                <button onClick={closeRequest} style={{ color: 'var(--text-muted)' }}><X size={16} /></button>
+                <button onClick={closeRequest} style={{ color: 'var(--text-muted)' }}>
+                  <X size={16} />
+                </button>
               </div>
 
               {reqDone ? (
@@ -328,6 +384,28 @@ export function ProjectSettingsClient({ project, availableDivisions }: { project
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  )
+}
+
+const inputStyle = {
+  width: '100%',
+  padding: '10px 14px',
+  borderRadius: '8px',
+  fontSize: '14px',
+  background: 'var(--surface-2)',
+  border: '1px solid var(--border-default)',
+  color: 'var(--text-primary)',
+  outline: 'none',
+} as React.CSSProperties
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+        {label}
+      </label>
+      {children}
     </div>
   )
 }

@@ -3,8 +3,22 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getAuthContext } from '@/lib/auth'
 import { z } from 'zod'
 
+/** Check if a non-admin user has division access to a given project. */
+async function hasDivisionAccess(projectId: string, userDivisions: string[]): Promise<boolean> {
+  if (userDivisions.length === 0) return false
+  const adminDb = createAdminClient()
+  const { data } = await adminDb
+    .from('projects')
+    .select('division')
+    .eq('id', projectId)
+    .single()
+  const projectDivision = (data as { division?: string | null } | null)?.division
+  return projectDivision != null && userDivisions.includes(projectDivision)
+}
+
 const updateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
+  division: z.string().min(1).optional(),
   client: z.string().optional(),
   location: z.string().optional(),
   projectNumber: z.string().optional(),
@@ -22,10 +36,14 @@ export async function GET(
   const { id } = await params
   const ctx = await getAuthContext()
   if (!ctx) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { user, isAdmin, supabase } = ctx
+  const { isAdmin, isManagement, divisions } = ctx
 
-  const db = isAdmin ? createAdminClient() : supabase
-  let query = db
+  if (!isAdmin && !isManagement && !(await hasDivisionAccess(id, divisions))) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
+  const adminDb = createAdminClient()
+  const { data, error } = await adminDb
     .from('projects')
     .select(`
       *,
@@ -36,10 +54,7 @@ export async function GET(
       )
     `)
     .eq('id', id)
-
-  if (!isAdmin) query = query.eq('user_id', user.id)
-
-  const { data, error } = await query.single()
+    .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 404 })
   return NextResponse.json(data)

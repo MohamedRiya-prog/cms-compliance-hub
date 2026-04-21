@@ -16,11 +16,13 @@ interface Report {
 interface Project {
   id: string
   name: string
+  project_number: string | null
   client: string | null
   location: string | null
   contractor: string | null
   main_contractor: string | null
   consultant: string | null
+  division: string | null
   updated_at: string
   compliance_reports: Report[]
   ownerName?: string
@@ -30,6 +32,7 @@ interface Props {
   userName: string
   projects: Project[]
   isAdmin?: boolean
+  userDivisions?: string[]
 }
 
 const container: Variants = {
@@ -47,19 +50,39 @@ function getGreeting() {
   return 'Good evening'
 }
 
+/** Per project: keep only the best-compliance revision per product_family */
+function dedupReports(reports: Report[]): Report[] {
+  const best = new Map<string, Report>()
+  for (const r of reports) {
+    const existing = best.get(r.product_family)
+    if (!existing) {
+      best.set(r.product_family, r)
+    } else {
+      const existRate = existing.summary?.total ? (existing.summary.comply ?? 0) / existing.summary.total : 0
+      const currRate  = r.summary?.total        ? (r.summary.comply ?? 0)          / r.summary.total        : 0
+      if (currRate > existRate) best.set(r.product_family, r)
+    }
+  }
+  return Array.from(best.values())
+}
+
 function projectStats(projects: Project[]) {
-  const totalReports = projects.reduce((a, p) => a + p.compliance_reports.length, 0)
-  const complyTotal = projects.reduce((a, p) =>
-    a + p.compliance_reports.reduce((b, r) => b + (r.summary?.comply ?? 0), 0), 0)
-  const allTotal = projects.reduce((a, p) =>
-    a + p.compliance_reports.reduce((b, r) => b + (r.summary?.total ?? 0), 0), 0)
+  let complyTotal = 0, allTotal = 0, totalReports = 0
+  for (const p of projects) {
+    const deduped = dedupReports(p.compliance_reports)
+    totalReports += deduped.length
+    for (const r of deduped) {
+      complyTotal += r.summary?.comply ?? 0
+      allTotal    += r.summary?.total  ?? 0
+    }
+  }
   const rate = allTotal > 0 ? Math.round((complyTotal / allTotal) * 100) : 0
   const pending = projects.reduce((a, p) =>
     a + p.compliance_reports.filter(r => r.status === 'review').length, 0)
   return { totalReports, rate, pending }
 }
 
-export function DashboardClient({ userName, projects, isAdmin }: Props) {
+export function DashboardClient({ userName, projects, isAdmin, userDivisions }: Props) {
   const { totalReports, rate, pending } = projectStats(projects)
 
   return (
@@ -158,8 +181,9 @@ export function DashboardClient({ userName, projects, isAdmin }: Props) {
         >
           {projects.map(project => {
             const reports = project.compliance_reports ?? []
-            const total = reports.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
-            const comply = reports.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
+            const deduped = dedupReports(reports)
+            const total = deduped.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
+            const comply = deduped.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
             const rate = total > 0 ? Math.round((comply / total) * 100) : null
 
             return (
@@ -172,9 +196,16 @@ export function DashboardClient({ userName, projects, isAdmin }: Props) {
                   >
                     <div className="flex items-start justify-between mb-3">
                       <div className="min-w-0">
-                        <h3 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
-                          {project.name}
-                        </h3>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {project.project_number && (
+                            <span className="text-[10px] font-mono font-semibold shrink-0 px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-3)', color: 'var(--text-muted)' }}>
+                              {project.project_number}
+                            </span>
+                          )}
+                          <h3 className="font-semibold text-sm truncate" style={{ color: 'var(--text-primary)' }}>
+                            {project.name}
+                          </h3>
+                        </div>
                         {project.client && (
                           <p className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
                             {project.client}
@@ -210,9 +241,22 @@ export function DashboardClient({ userName, projects, isAdmin }: Props) {
                     </div>
 
                     {project.location && (
-                      <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                      <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
                         {project.location}
                       </p>
+                    )}
+
+                    {project.division && (
+                      <span
+                        className="inline-block mb-3 text-[10px] font-medium px-2 py-0.5 rounded-full border"
+                        style={{
+                          color: 'oklch(0.62 0.17 240)',
+                          background: 'oklch(0.62 0.17 240 / 0.08)',
+                          borderColor: 'oklch(0.62 0.17 240 / 0.25)',
+                        }}
+                      >
+                        {project.division}
+                      </span>
                     )}
 
                     <div className="flex items-center justify-between">

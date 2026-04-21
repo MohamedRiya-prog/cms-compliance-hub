@@ -30,9 +30,25 @@ export default async function ConsultantsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const rowsArr = ((failingRows ?? []) as unknown as any[]) as FailingRow[]
 
+  // ── Dedup: keep only the best revision per (project, product_family) ────
+  const bestRevisionMap = new Map<string, ReportRow>()
+  for (const r of reportsArr) {
+    const key = `${r.projects.id}||${r.product_family}`
+    const existing = bestRevisionMap.get(key)
+    if (!existing) {
+      bestRevisionMap.set(key, r)
+    } else {
+      const existRate = existing.summary?.total ? (existing.summary.comply ?? 0) / existing.summary.total : 0
+      const currRate  = r.summary?.total        ? (r.summary.comply ?? 0)          / r.summary.total        : 0
+      if (currRate > existRate) bestRevisionMap.set(key, r)
+    }
+  }
+  const dedupedReports = Array.from(bestRevisionMap.values())
+  const bestReportIds  = new Set(dedupedReports.map(r => r.id))
+
   // reportId → consultant name (for failing-row cross-ref)
   const reportConsultantMap = new Map(
-    reportsArr.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
+    dedupedReports.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
   )
 
   type ProjectDetail = {
@@ -55,10 +71,11 @@ export default async function ConsultantsPage() {
     notComply: number
     noted: number
     familyFails: Map<string, number>
+    familyStats: Map<string, { totalClauses: number; comply: number }>
     lastActivity: string
   }>()
 
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const cName = r.projects.consultant?.trim() || 'No Consultant'
 
     if (!consultantMap.has(cName)) {
@@ -71,6 +88,7 @@ export default async function ConsultantsPage() {
         notComply: 0,
         noted: 0,
         familyFails: new Map(),
+        familyStats: new Map(),
         lastActivity: r.created_at,
       })
     }
@@ -82,6 +100,13 @@ export default async function ConsultantsPage() {
     entry.notComply    += r.summary?.notComply ?? 0
     entry.noted        += r.summary?.noted     ?? 0
     if (r.created_at > entry.lastActivity) entry.lastActivity = r.created_at
+
+    // Per-product-family stats
+    const fam = r.product_family
+    if (!entry.familyStats.has(fam)) entry.familyStats.set(fam, { totalClauses: 0, comply: 0 })
+    const fs = entry.familyStats.get(fam)!
+    fs.totalClauses += r.summary?.total  ?? 0
+    fs.comply       += r.summary?.comply ?? 0
 
     const pid = r.projects.id
     if (!entry.projectMap.has(pid)) {
@@ -105,8 +130,9 @@ export default async function ConsultantsPage() {
     if (r.created_at > proj.lastActivity) proj.lastActivity = r.created_at
   }
 
-  // Tally failing product families per consultant
+  // Tally failing product families (best revisions only)
   for (const row of rowsArr) {
+    if (!bestReportIds.has(row.compliance_reports.id)) continue
     const consultant = reportConsultantMap.get(row.compliance_reports.id)
     if (!consultant) continue
     const entry = consultantMap.get(consultant)
@@ -131,6 +157,14 @@ export default async function ConsultantsPage() {
         .slice(0, 3)
         .map(([fam]) => fam),
       lastActivity: c.lastActivity,
+      productStats: Array.from(c.familyStats.entries())
+        .map(([family, fs]) => ({
+          family,
+          totalClauses: fs.totalClauses,
+          comply: fs.comply,
+          complianceRate: fs.totalClauses > 0 ? Math.round((fs.comply / fs.totalClauses) * 100) : 0,
+        }))
+        .sort((a, b) => a.complianceRate - b.complianceRate),
       projectDetails: Array.from(c.projectMap.values())
         .map(p => ({
           ...p,

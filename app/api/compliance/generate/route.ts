@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { buildSystemPrompt, getComplianceRules, getProductData, getComplianceExamples, computePromptVersion } from '@/lib/prompt-builder'
 import { parseClaudeResponse, computeSummary } from '@/lib/compliance-validator'
 import { computeTextHash } from '@/lib/utils'
@@ -22,20 +23,33 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, divisions')
+    .eq('id', user.id)
+    .single()
+  if (profile?.role === 'management') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const isAdmin = profile?.role === 'admin'
+  const userDivisions: string[] = (profile as { divisions?: string[] | null } | null)?.divisions ?? []
+
   const body = await req.json()
   const parsed = schema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 })
 
   const { specText, productFamily, specDocumentId, projectId, title, force } = parsed.data
 
-  // Verify project ownership
-  const { data: project } = await supabase
+  // Verify project access (division-based)
+  const adminDb = createAdminClient()
+  const { data: project } = await adminDb
     .from('projects')
-    .select('id')
+    .select('id, division')
     .eq('id', projectId)
-    .eq('user_id', user.id)
     .single()
   if (!project) return NextResponse.json({ error: 'Project not found' }, { status: 404 })
+  const projectDivision = (project as { division?: string | null }).division
+  if (!isAdmin && (!projectDivision || !userDivisions.includes(projectDivision))) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 })
+  }
 
   const contentHash = computeTextHash(specText + '|' + productFamily)
 

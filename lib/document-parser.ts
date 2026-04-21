@@ -43,13 +43,30 @@ function dotDepth(num: string): number {
   return num.split('.').length
 }
 
-export function detectSections(text: string): DetectedSection[] {
+export interface SectionPattern {
+  pattern: RegExp
+  family: string
+  label: string
+}
+
+/** Build a regex from a comma-separated keyword string, e.g. "ceiling fan, exhaust fan" */
+export function buildDetectionPattern(keywords: string): RegExp {
+  const terms = keywords
+    .split(',')
+    .map(k => k.trim())
+    .filter(Boolean)
+    .map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  return new RegExp(terms.join('|'), 'i')
+}
+
+export function detectSections(text: string, extraPatterns: SectionPattern[] = []): DetectedSection[] {
+  const allPatterns: SectionPattern[] = [...SECTION_PATTERNS, ...extraPatterns]
   const matches = [...text.matchAll(HEADING_RE)]
 
   // ── No numbered headings at all → whole-text fallback ──────────────────
   if (matches.length === 0) {
     const sections: DetectedSection[] = []
-    for (const sp of SECTION_PATTERNS) {
+    for (const sp of allPatterns) {
       if (sp.pattern.test(text)) {
         sections.push({
           sectionNumber: '1',
@@ -99,8 +116,8 @@ export function detectSections(text: string): DetectedSection[] {
     if (CROSS_REF_RE.test(header)) continue
 
     // Test ONLY the heading line for a product keyword
-    let matched: typeof SECTION_PATTERNS[number] | null = null
-    for (const sp of SECTION_PATTERNS) {
+    let matched: SectionPattern | null = null
+    for (const sp of allPatterns) {
       if (sp.pattern.test(header)) { matched = sp; break }
     }
     if (!matched) continue

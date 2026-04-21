@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import {
   LayoutDashboard, FolderOpen, Settings, ChevronLeft, ChevronRight,
   LogOut, Package, BookOpen, Building2, Menu, X, Sun, Moon, BarChart2, Users,
-  ChevronDown, Shield, Wrench, ClipboardCheck,
+  ChevronDown, Shield, Wrench, ClipboardCheck, Layers,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -17,7 +17,8 @@ import { useTheme } from '@/components/theme-provider'
 interface TeamMember {
   id: string
   name: string
-  role: string
+  role: string            // primary role (admin / coordinator / engineer)
+  displayRole: string     // role used for grouping in presence panel
 }
 
 const navItems = [
@@ -35,6 +36,7 @@ const settingsItems = [
 const adminNavItems = [
   { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/admin/users',     label: 'Users',     icon: Users },
+  { href: '/admin/divisions', label: 'Divisions', icon: Layers },
 ]
 
 interface SidebarProps {
@@ -285,11 +287,10 @@ function TeamPanel({
 
   const onlineCount = teamMembers.filter(m => onlineIds.has(m.id)).length
 
-  // Group: sort by role priority then online-first
+  // Group by displayRole — admins without a functional role are excluded
   const groups: Array<{ key: string; label: string; members: TeamMember[] }> = [
-    { key: 'engineer',    label: 'Engineers',    members: teamMembers.filter(m => m.role === 'engineer') },
-    { key: 'coordinator', label: 'Coordinators', members: teamMembers.filter(m => m.role === 'coordinator') },
-    { key: 'admin',       label: 'Admins',       members: teamMembers.filter(m => m.role === 'admin') },
+    { key: 'engineer',    label: 'Engineers',    members: teamMembers.filter(m => m.displayRole === 'engineer') },
+    { key: 'coordinator', label: 'Coordinators', members: teamMembers.filter(m => m.displayRole === 'coordinator') },
   ].filter(g => g.members.length > 0)
 
   return (

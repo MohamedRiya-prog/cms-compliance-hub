@@ -71,6 +71,22 @@ export default async function AdminAnalyticsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const profilesArr = ((profiles ?? []) as unknown as any[]) as ProfileRow[]
 
+  // ── Dedup: keep only the best revision per (project, product_family) ────
+  const bestRevisionMap = new Map<string, ReportRow>()
+  for (const r of reportsArr) {
+    const key = `${r.projects.id}||${r.product_family}`
+    const existing = bestRevisionMap.get(key)
+    if (!existing) {
+      bestRevisionMap.set(key, r)
+    } else {
+      const existRate = existing.summary?.total ? (existing.summary.comply ?? 0) / existing.summary.total : 0
+      const currRate  = r.summary?.total        ? (r.summary.comply ?? 0)          / r.summary.total        : 0
+      if (currRate > existRate) bestRevisionMap.set(key, r)
+    }
+  }
+  const dedupedReports = Array.from(bestRevisionMap.values())
+  const bestReportIds  = new Set(dedupedReports.map(r => r.id))
+
   // Build email map from auth users
   const emailMap = new Map((authUsers?.users ?? []).map(u => [u.id, u.email ?? '']))
 
@@ -80,7 +96,7 @@ export default async function AdminAnalyticsPage() {
   const now = new Date()
   const year = now.getFullYear()
   const dailyCounts: Record<string, number> = {}
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const d = new Date(r.created_at)
     if (d.getFullYear() === year) {
       const key = `${year}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -89,11 +105,11 @@ export default async function AdminAnalyticsPage() {
   }
 
   // ── Overview ────────────────────────────────────────────────────────────────
-  const totalReports = reportsArr.length
-  const totalClauses = reportsArr.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
-  const totalComply = reportsArr.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
+  const totalReports = dedupedReports.length
+  const totalClauses = dedupedReports.reduce((a, r) => a + (r.summary?.total ?? 0), 0)
+  const totalComply = dedupedReports.reduce((a, r) => a + (r.summary?.comply ?? 0), 0)
   const avgComplianceRate = totalClauses > 0 ? Math.round((totalComply / totalClauses) * 100) : 0
-  const activeUsers = new Set(reportsArr.map(r => r.projects.user_id)).size
+  const activeUsers = new Set(dedupedReports.map(r => r.projects.user_id)).size
 
   // ── Products ────────────────────────────────────────────────────────────────
   const productMap = new Map<string, {
@@ -107,7 +123,7 @@ export default async function AdminAnalyticsPage() {
     lastActivity: string
   }>()
 
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const fam = r.product_family
     if (!productMap.has(fam)) {
       productMap.set(fam, {
@@ -149,7 +165,7 @@ export default async function AdminAnalyticsPage() {
     reports: GapReport[]
   }>()
 
-  for (const row of rowsArr) {
+  for (const row of rowsArr.filter(row => bestReportIds.has(row.compliance_reports.id))) {
     const fam = row.compliance_reports.product_family
     const reqKey = (row.requirement ?? '').slice(0, 120)
     const key = `${fam}|||${reqKey}`
@@ -204,7 +220,7 @@ export default async function AdminAnalyticsPage() {
     lastActivity: string
   }>()
 
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const uid = r.projects.user_id
     if (!userMap.has(uid)) {
       userMap.set(uid, {
@@ -242,7 +258,7 @@ export default async function AdminAnalyticsPage() {
 
   // ── Consultants ───────────────────────────────────────────────────────────
   const reportConsultantMap = new Map(
-    reportsArr.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
+    dedupedReports.map(r => [r.id, r.projects.consultant?.trim() || 'No Consultant'])
   )
 
   type ProjectDetail = {
@@ -253,16 +269,18 @@ export default async function AdminAnalyticsPage() {
   const consultantMap = new Map<string, {
     consultant: string; projectMap: Map<string, ProjectDetail>
     reports: number; totalClauses: number; comply: number; notComply: number; noted: number
-    familyFails: Map<string, number>; lastActivity: string
+    familyFails: Map<string, number>
+    familyStats: Map<string, { totalClauses: number; comply: number }>
+    lastActivity: string
   }>()
 
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const cName = r.projects.consultant?.trim() || 'No Consultant'
     if (!consultantMap.has(cName)) {
       consultantMap.set(cName, {
         consultant: cName, projectMap: new Map(),
         reports: 0, totalClauses: 0, comply: 0, notComply: 0, noted: 0,
-        familyFails: new Map(), lastActivity: r.created_at,
+        familyFails: new Map(), familyStats: new Map(), lastActivity: r.created_at,
       })
     }
     const ce = consultantMap.get(cName)!
@@ -272,6 +290,12 @@ export default async function AdminAnalyticsPage() {
     ce.notComply    += r.summary?.notComply ?? 0
     ce.noted        += r.summary?.noted     ?? 0
     if (r.created_at > ce.lastActivity) ce.lastActivity = r.created_at
+
+    const fam = r.product_family
+    if (!ce.familyStats.has(fam)) ce.familyStats.set(fam, { totalClauses: 0, comply: 0 })
+    const fs = ce.familyStats.get(fam)!
+    fs.totalClauses += r.summary?.total  ?? 0
+    fs.comply       += r.summary?.comply ?? 0
 
     const pid = r.projects.id
     if (!ce.projectMap.has(pid)) {
@@ -290,6 +314,7 @@ export default async function AdminAnalyticsPage() {
   }
 
   for (const row of rowsArr) {
+    if (!bestReportIds.has(row.compliance_reports.id)) continue
     const cName = reportConsultantMap.get(row.compliance_reports.id)
     if (!cName) continue
     const ce = consultantMap.get(cName)
@@ -311,6 +336,14 @@ export default async function AdminAnalyticsPage() {
       topFailingFamilies: Array.from(c.familyFails.entries())
         .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([f]) => f),
       lastActivity: c.lastActivity,
+      productStats: Array.from(c.familyStats.entries())
+        .map(([family, fs]) => ({
+          family,
+          totalClauses: fs.totalClauses,
+          comply: fs.comply,
+          complianceRate: fs.totalClauses > 0 ? Math.round((fs.comply / fs.totalClauses) * 100) : 0,
+        }))
+        .sort((a, b) => a.complianceRate - b.complianceRate),
       projectDetails: Array.from(c.projectMap.values())
         .map(p => ({ ...p, complianceRate: p.totalClauses > 0 ? Math.round((p.comply / p.totalClauses) * 100) : 0 }))
         .sort((a, b) => b.complianceRate - a.complianceRate),
@@ -329,7 +362,7 @@ export default async function AdminAnalyticsPage() {
     lastActivity: string
   }>()
 
-  for (const r of reportsArr) {
+  for (const r of dedupedReports) {
     const div = familyDivisionMap.get(r.product_family) ?? 'GD & ACC'
     if (!divisionMap.has(div)) {
       divisionMap.set(div, {

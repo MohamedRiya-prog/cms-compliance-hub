@@ -14,12 +14,12 @@ export default async function ProjectSettingsPage({
   if (!ctx.isAdmin) redirect(`/projects/${projectId}`)
 
   const adminDb = createAdminClient()
-  const { data: project } = await adminDb
-    .from('projects')
-    .select('*')
-    .eq('id', projectId)
-    .single()
+  const [{ data: project }, { data: divisionRows }] = await Promise.all([
+    adminDb.from('projects').select('*').eq('id', projectId).single(),
+    adminDb.from('divisions').select('name').order('name'),
+  ])
 
   if (!project) notFound()
-  return <ProjectSettingsClient project={project} />
+  const availableDivisions = (divisionRows ?? []).map((d: { name: string }) => d.name)
+  return <ProjectSettingsClient project={project} availableDivisions={availableDivisions} />
 }
